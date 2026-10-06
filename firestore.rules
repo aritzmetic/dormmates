@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{d}/documents {
+    function mem(s) { return request.auth.uid in get(/databases/$(d)/documents/spaces/$(s)).data.members; }
+    function own(s) { return get(/databases/$(d)/documents/spaces/$(s)).data.ownerId == request.auth.uid; }
+    match /spaces/{s} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      allow update: if request.auth != null && request.resource.data.ownerId == resource.data.ownerId;
+      match /punches/{p} {
+        allow read: if mem(s);
+        allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
+      }
+      match /exceptions/{e} {
+        allow read: if mem(s);
+        allow create: if mem(s) && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending';
+        allow update: if own(s);
+      }
+      match /bills/{b} {
+        allow read: if mem(s);
+        allow write: if own(s);
+      }
+    }
+  }
+}
