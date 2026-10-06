@@ -1,13 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{d}/documents {
-    function mem(s) { return request.auth.uid in get(/databases/$(d)/documents/spaces/$(s)).data.members; }
-    function own(s) { return get(/databases/$(d)/documents/spaces/$(s)).data.ownerId == request.auth.uid; }
+    function sp(s) { return get(/databases/$(d)/documents/spaces/$(s)).data; }
+    function mem(s) { return request.auth != null && request.auth.uid in sp(s).members; }
+    function own(s) { return request.auth != null && sp(s).ownerId == request.auth.uid; }
+
     match /spaces/{s} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
-      allow update: if request.auth != null && (request.resource.data.ownerId == resource.data.ownerId || resource.data.ownerId == request.auth.uid);
+      allow update: if request.auth != null && (
+        // host: anything, as long as the new host is still a member (covers host leaving)
+        (resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId in request.resource.data.members)
+        // members: only touch members/names, only for themselves
+        || (request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members','names'])
+          && (
+            // join
+            (!(request.auth.uid in resource.data.members)
+              && request.auth.uid in request.resource.data.members
+              && request.resource.data.members.size() == resource.data.members.size() + 1)
+            // leave
+            || (request.auth.uid in resource.data.members
+              && !(request.auth.uid in request.resource.data.members)
+              && request.resource.data.members.size() == resource.data.members.size() - 1)
+            // refresh own name/photo
+            || (request.auth.uid in resource.data.members
+              && request.resource.data.members.size() == resource.data.members.size())
+          )));
       allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+
       match /punches/{p} {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
@@ -18,15 +40,21 @@ service cloud.firestore {
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending';
         allow update, delete: if own(s);
       }
-      match /notes/{n} {
-        allow read: if mem(s);
-        allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
-        allow delete: if own(s) || resource.data.uid == request.auth.uid;
-      }
       match /bills/{b} {
         allow read: if mem(s);
         allow write: if own(s);
       }
+      match /notes/{n} {
+        allow read: if mem(s);
+        allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
+        allow delete: if mem(s) && (resource.data.uid == request.auth.uid || own(s));
+      }
+    }
+
+    // push-notification tokens (one doc per phone)
+    match /tokens/{t} {
+      allow create, update: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow read, delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
   }
 }

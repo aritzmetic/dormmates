@@ -3,6 +3,7 @@ import {motion,AnimatePresence,animate,useDragControls} from 'framer-motion';
 import {onAuthStateChanged,signInWithPopup,signOut,deleteUser,reauthenticateWithPopup} from 'firebase/auth';
 import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where,orderBy,limit,onSnapshot,getDocs,arrayUnion,arrayRemove} from 'firebase/firestore';
 import {auth,db,gp} from './firebase';
+import {enablePush} from './push';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,norm,away,fd,dayWord,notify,shrink} from './lib';
 
 const buzz=()=>navigator.vibrate?.(25);
@@ -31,6 +32,7 @@ export default function App(){
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
  useEffect(()=>{const t=setInterval(()=>tick(n=>n+1),1000);return()=>clearInterval(t)},[]);
  useEffect(()=>onAuthStateChanged(auth,user=>{setU(user);setReady(true)}),[]);
+ useEffect(()=>{if(u&&window.Notification?.permission==='granted')enablePush(u.uid).catch(()=>{})},[u?.uid]);
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
@@ -69,9 +71,11 @@ export default function App(){
  async function delSpace(){if(!confirm(`Delete "${sp.name}" for everyone? All punches, fixes, bills and notes will be removed.`))return;
   if(prompt(`Final check. Type the space name exactly to delete it forever:\n${sp.name}`)!==sp.name)return say('Name did not match. Nothing was deleted.');
   try{await wipe(sp.id);setMenu(null);setSid(null);say('Space and all its data deleted')}catch(e){say('Delete failed: '+e.message+' Publish the latest firestore.rules.',6000)}}
- const askNotif=async()=>{if(!window.Notification)return say('Not supported here. On iPhone, add the app to your Home Screen first.',5000);
-  if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your browser settings.',5000);
-  const ok=await notify('DormMates reminders are on 🔔','You will be reminded at 7:30 PM before your 8:00 PM auto time-in.');say(ok?'Reminders on. Check your notifications.':'Allowed, but the notification could not be shown.',4000)};
+ const askNotif=async()=>{
+  if(!window.Notification||!('serviceWorker' in navigator))return say('Not supported here. On iPhone, add the app to your Home Screen first, then open it from the icon.',6000);
+  if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
+  try{await enablePush(u.uid);await notify('DormMates reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
+  catch(e){say('Could not turn on push: '+e.message,6000)}};
  async function wipe(id){for(const c of ['punches','exceptions','bills','notes']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('')};
  const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
