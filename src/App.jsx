@@ -4,6 +4,7 @@ import {onAuthStateChanged,signInWithPopup,signOut,deleteUser,reauthenticateWith
 import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where,orderBy,limit,onSnapshot,getDocs,arrayUnion,arrayRemove} from 'firebase/firestore';
 import {auth,db,gp} from './firebase';
 import {enablePush} from './push';
+import {ping} from './notify';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,pairs,norm,away,fd,dayWord,notify,shrink} from './lib';
 
 const buzz=()=>navigator.vibrate?.(25);
@@ -57,7 +58,7 @@ export default function App(){
  const H=id=>hrs(id,P,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
  const proof=p=>p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
 
- async function save(pr,type){type=type||(on?'out':'in');await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr});setMenu(null);buzz();
+ async function save(pr,type){type=type||(on?'out':'in');const pref=await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr});setMenu(null);buzz();if(type!=='away')ping({sid:sp.id,kind:'punch',id:pref.id});
   if(type==='away')return say('Confirmed ✓ Next check is tomorrow 7:30–8:00 PM');setBurst(b=>b+1);
   if(type==='in')return say('Timed in ✓');const m=`Auto time-in ${dayWord(fd(Date.now()))} at 8:00 PM. Confirm from 7:30 PM to stay out.`;say('Timed out ✓\n'+m,6000);notify('Timed out ✓',m)}
  const photo=async(fl,t)=>fl&&save({photo:await shrink(fl)},t);
@@ -77,9 +78,9 @@ export default function App(){
   try{await enablePush(u.uid);await notify('DormMates reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
  async function wipe(id){for(const c of ['punches','exceptions','bills','notes','announcements']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
- const post=async()=>{if(!nt.trim())return;await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('')};
+ const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
- const sendAn=async()=>{if(!an.trim())return;try{await addDoc(col('announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
+ const sendAn=async()=>{if(!an.trim())return;try{const ar=await addDoc(col('announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');ping({sid:sp.id,kind:'announcement',id:ar.id});buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
  const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
   <button className={`w ${aw.open?'pri':''}`} disabled={!aw.open} onClick={()=>setMenu('away')}>{aw.open?"📍 I'm still away":'Opens at 7:30 PM'}</button></Item>;
  const Home=()=>{const ms=members.map(m=>({...m,h:H(m.id)})).sort((a,b)=>b.h-a.h),mx=Math.max(1,...ms.map(m=>m.h)),h=H(u.uid),home=members.filter(m=>last(m.id)?.type==='in').length;
@@ -126,7 +127,7 @@ export default function App(){
     <p><b>{kindName[k]}</b></p>
     {k==='edit'&&<p className="mut">Was {fmt(x.origA)} → {fmt(x.origB)}</p>}
     <p>{k==='remove'?'Remove ':k==='edit'?'Now ':''}{fmt(x.inTs)} → {fmt(x.outTs)} <span className="mut">({dur((x.outTs-x.inTs)/36e5)})</span></p><p className="mut">“{x.reason}”</p>
-    {owner&&x.status==='pending'&&<div className="row" style={{marginTop:10}}>{['approved','denied'].map(s=><button key={s} className={s==='approved'?'ok':'no'} style={{flex:1}} onClick={()=>{updateDoc(doc(db,'spaces',sp.id,'exceptions',x.id),{status:s,decidedAt:Date.now()});buzz()}}>{s==='approved'?'Approve':'Deny'}</button>)}</div>}
+    {owner&&x.status==='pending'&&<div className="row" style={{marginTop:10}}>{['approved','denied'].map(s=><button key={s} className={s==='approved'?'ok':'no'} style={{flex:1}} onClick={()=>{updateDoc(doc(db,'spaces',sp.id,'exceptions',x.id),{status:s,decidedAt:Date.now()}).then(()=>ping({sid:sp.id,kind:'fixdecision',id:x.id}));buzz()}}>{s==='approved'?'Approve':'Deny'}</button>)}</div>}
     {x.uid===u.uid&&x.status==='pending'&&<button className="sm w" style={{marginTop:10}} onClick={()=>deleteDoc(doc(db,'spaces',sp.id,'exceptions',x.id))}>Cancel request</button>}</Item>})}
    {!L.length&&<Item><span className="mut">No requests yet.</span></Item>}</List>};
 
@@ -138,7 +139,7 @@ export default function App(){
    if(mode==='remove'){q.origA=q.cutA=q.inTs=s.a;q.origB=q.cutB=q.outTs=s.live?now:s.b}
    else{const a=+new Date(i),b=+new Date(o);if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>now+6e4)return say("Time out can't be in the future.");
     q.inTs=a;q.outTs=b;if(mode==='add'){q.cutA=a;q.cutB=b}else{q.origA=q.cutA=s.a;q.origB=q.cutB=s.live?now:s.b}}
-   try{await addDoc(col('exceptions'),q);setEf(null);setMenu(null);buzz();say('Request sent ✓')}catch(e){say('Failed: '+e.message,5000)}};
+   try{const xr=await addDoc(col('exceptions'),q);ping({sid:sp.id,kind:'fixnew',id:xr.id});setEf(null);setMenu(null);buzz();say('Request sent ✓')}catch(e){say('Failed: '+e.message,5000)}};
   if(ef)return <><h2>{{add:'Add missing time',edit:'Change this session',remove:'Remove this session'}[ef.mode]}</h2><p className="mut" style={{margin:'6px 0 14px'}}>{title}</p>
    {ef.mode==='remove'?<div className="sess"><b>{fmt(ef.s.a)} → {ef.s.live?'now':fmt(ef.s.b)}</b><div className="mut">This session stops counting once approved.</div></div>
    :<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>{ef.mode==='add'&&<p className="mut" style={{marginBottom:10}}>Once approved, this replaces any punches inside that window.</p>}</>}
@@ -158,7 +159,7 @@ export default function App(){
   const se=split(b.elec||0),sw=split(b.water||0),tot=(b.elec||0)+(b.water||0),bref=doc(db,'spaces',sp.id,'bills',key);
   const rate=T>0?tot/T:0,rangeH=days*24;
   const npend=X.filter(x=>x.status==='pending'&&x.inTs<rg[1]&&x.outTs>rg[0]).length,live=!b.final&&members.some(m=>last(m.id)?.type==='in');
-  const submit=async ev=>{ev.preventDefault();const g=new FormData(ev.target);await setDoc(bref,{elec:+g.get('e')||0,water:+g.get('w')||0,ps:s2d(g.get('s')),pe:s2d(g.get('x'))},{merge:true});say('Bills saved');buzz()};
+  const submit=async ev=>{ev.preventDefault();const g=new FormData(ev.target);const nb={elec:+g.get('e')||0,water:+g.get('w')||0,ps:s2d(g.get('s')),pe:s2d(g.get('x'))},ch=(nb.elec||nb.water)&&(nb.elec!==(b.elec||0)||nb.water!==(b.water||0)||nb.ps!==b.ps||nb.pe!==b.pe);await setDoc(bref,nb,{merge:true});if(ch)ping({sid:sp.id,kind:'bills',id:key});say('Bills saved');buzz()};
   const csv=()=>{const rows=[['Name','Hours','Share %','Electric','Water','Total','Paid'],...hm.map((m,i)=>[m.n,m.h.toFixed(2),(T?m.h/T*100:100/hm.length).toFixed(1),se[i].toFixed(2),sw[i].toFixed(2),(se[i]+sw[i]).toFixed(2),b.paid?.[m.id]?'yes':'no'])],a=document.createElement('a');
    a.href=URL.createObjectURL(new Blob([rows.map(x=>x.map(c=>`"${c}"`).join(',')).join('\n')],{type:'text/csv'}));a.download=`dormmates-bills-${d2s(ps)}.csv`;a.click()};
   return <List><Cycle off={off} set={setOff}/>
@@ -175,9 +176,9 @@ export default function App(){
     <label>Period starts</label><input name="s" type="date" defaultValue={d2s(ps)} required/><label>Period ends</label><input name="x" type="date" defaultValue={d2s(pe)} required/><button className="pri w">Save & calculate</button></form></Item>}
    {tot?<>{hm.map((m,i)=>{const s=T?m.h/T:1/hm.length,pd=b.paid?.[m.id];
     return <Item key={m.id}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b><div className="mut">{dur(m.h)} of {dur(T)} · {(s*100).toFixed(1)}%{T?` · ${peso(rate)}/h`:''}</div></div><div className="big" style={{fontSize:24}}>{peso(se[i]+sw[i])}</div></div>
-    <div className="row sp mut" style={{marginTop:10}}><span>⚡ {peso(se[i])}</span><span>💧 {peso(sw[i])}</span>{owner?<button className={`sm ${pd?'ok':''}`} onClick={()=>updateDoc(bref,{['paid.'+m.id]:!pd})}>{pd?'Paid ✓':'Mark paid'}</button>:pd&&<span className="tag t-approved">Paid</span>}</div></Item>})}
+    <div className="row sp mut" style={{marginTop:10}}><span>⚡ {peso(se[i])}</span><span>💧 {peso(sw[i])}</span>{owner?<button className={`sm ${pd?'ok':''}`} onClick={()=>updateDoc(bref,{['paid.'+m.id]:!pd}).then(()=>{if(!pd)ping({sid:sp.id,kind:'paid',id:key,target:m.id})})}>{pd?'Paid ✓':'Mark paid'}</button>:pd&&<span className="tag t-approved">Paid</span>}</div></Item>})}
     <Item><div className="row sp"><span className="mut">Total billed</span><b>{peso(tot)}</b></div><p className="mut" style={{marginTop:6}}>Each share = member hours ÷ total hours × bill. Cents are allocated so the shares add up exactly.</p>
-     <div className="row" style={{marginTop:12}}><button className="sm" style={{flex:1}} onClick={csv}>⬇ Export CSV</button>{owner&&<button className={`sm ${b.final?'':'pri'}`} style={{flex:1}} onClick={()=>setDoc(bref,{final:b.final?deleteField():Object.fromEntries(hm.map(m=>[m.id,m.h]))},{merge:true})}>{b.final?'Reopen':'🔒 Finalize'}</button>}</div></Item></>
+     <div className="row" style={{marginTop:12}}><button className="sm" style={{flex:1}} onClick={csv}>⬇ Export CSV</button>{owner&&<button className={`sm ${b.final?'':'pri'}`} style={{flex:1}} onClick={()=>setDoc(bref,{final:b.final?deleteField():Object.fromEntries(hm.map(m=>[m.id,m.h]))},{merge:true}).then(()=>{if(!b.final)ping({sid:sp.id,kind:'final',id:key})})}>{b.final?'Reopen':'🔒 Finalize'}</button>}</div></Item></>
    :<Item><span className="mut">The host hasn't entered this period's bills yet.</span></Item>}</List>};
 
  const V={home:Home,dorm:Dorm,history:History,fixes:Fixes,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills']];
