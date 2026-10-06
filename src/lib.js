@@ -27,12 +27,15 @@ export function norm(uid,P,now=Date.now()){const a=P.filter(p=>p.uid===uid&&p.ty
 export function away(uid,P,now=Date.now()){const l=norm(uid,P,now).at(-1);if(!l||l.type!=='out')return null;
  const aw=P.filter(p=>p.uid===uid&&p.type==='away').map(p=>p.ts);let D=fd(l.ts);while(aw.some(t=>t>=D-18e5&&t<D))D=dl(D);
  return{D,open:now>=D-18e5&&now<D}}
-// sessions; an approved fix OVERWRITES any punch session it overlaps
-export function pairs(uid,P,X,now=Date.now()){const out=[];let o=null;
+// sessions; approved fixes are layered in the order they were decided. Each fix clears the sessions it overlaps (cutA..cutB),
+// then adds its own corrected session (kind 'add' | 'edit'); kind 'remove' only clears.
+export function pairs(uid,P,X,now=Date.now()){let out=[],o=null;
  norm(uid,P,now).forEach(p=>{if(p.type==='in')o=p;else if(p.type==='out'&&o){out.push({a:o.ts,b:p.ts,ip:o,op:p});o=null}});
  if(o)out.push({a:o.ts,b:now,ip:o,live:true});
- const fx=X.filter(x=>x.uid===uid&&x.status==='approved');
- return out.filter(s=>!fx.some(x=>s.a<x.outTs&&s.b>x.inTs)).concat(fx.map(x=>({a:x.inTs,b:x.outTs,fix:true})))}
+ X.filter(x=>x.uid===uid&&x.status==='approved').sort((x,y)=>(x.decidedAt??x.createdAt??0)-(y.decidedAt??y.createdAt??0)).forEach(x=>{
+  const ca=x.cutA??x.inTs,cb=x.cutB??x.outTs;out=out.filter(s=>!(s.a<cb&&s.b>ca));
+  if(x.kind!=='remove')out.push({a:x.inTs,b:x.outTs,fix:true})});
+ return out}
 export function iv(uid,P,X,[s,e]){const a=pairs(uid,P,X).map(x=>[x.a,x.b]).sort((x,y)=>x[0]-y[0]),m=[];
  for(const[b,c]of a){const L=m[m.length-1];if(L&&b<=L[1])L[1]=Math.max(L[1],c);else m.push([b,c])}
  return m.map(([b,c])=>[Math.max(b,s),Math.min(c,e)]).filter(([b,c])=>c>b)}

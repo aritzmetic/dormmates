@@ -38,7 +38,8 @@ service cloud.firestore {
       match /exceptions/{e} {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending';
-        allow update, delete: if own(s);
+        allow update: if own(s);
+        allow delete: if own(s) || (request.auth != null && resource.data.uid == request.auth.uid && resource.data.status == 'pending');
       }
       match /bills/{b} {
         allow read: if mem(s);
@@ -48,6 +49,11 @@ service cloud.firestore {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
         allow delete: if mem(s) && (resource.data.uid == request.auth.uid || own(s));
+      }
+      match /announcements/{a} {
+        allow read: if mem(s);
+        allow create: if own(s) && request.resource.data.uid == request.auth.uid;
+        allow delete: if own(s);
       }
     }
 

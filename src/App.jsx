@@ -4,7 +4,7 @@ import {onAuthStateChanged,signInWithPopup,signOut,deleteUser,reauthenticateWith
 import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where,orderBy,limit,onSnapshot,getDocs,arrayUnion,arrayRemove} from 'firebase/firestore';
 import {auth,db,gp} from './firebase';
 import {enablePush} from './push';
-import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,norm,away,fd,dayWord,notify,shrink} from './lib';
+import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,pairs,norm,away,fd,dayWord,notify,shrink} from './lib';
 
 const buzz=()=>navigator.vibrate?.(25);
 function Num({v,d=1}){const r=useRef();useEffect(()=>{const c=animate(0,v,{duration:1,ease:'easeOut',onUpdate:x=>r.current&&(r.current.textContent=x.toFixed(d))});return()=>c.stop()},[v]);return <span ref={r}>0</span>}
@@ -27,7 +27,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]);
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[an,setAn]=useState(''),[A,setA]=useState([]);
  const iso=t=>new Date(t-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16),[f,setF]=useState({i:iso(Date.now()-9*36e5),o:iso(Date.now()),r:''});
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
  useEffect(()=>{const t=setInterval(()=>tick(n=>n+1),1000);return()=>clearInterval(t)},[]);
@@ -36,8 +36,8 @@ export default function App(){
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
- useEffect(()=>{setP([]);setX([]);setB([]);setN([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
-  const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d)))];
+ useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
+  const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(5)),d=>setA(m(d)))];
   return()=>un.forEach(x=>x())},[sp?.id]);
  const open=id=>{setSid(id);setTab('home');setOff(0);setMenu(null)};
 
@@ -76,8 +76,9 @@ export default function App(){
   if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
   try{await enablePush(u.uid);await notify('DormMates reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
- async function wipe(id){for(const c of ['punches','exceptions','bills','notes']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
+ async function wipe(id){for(const c of ['punches','exceptions','bills','notes','announcements']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('')};
+ const sendAn=async()=>{if(!an.trim())return;try{await addDoc(col('announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
  const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
   <button className={`w ${aw.open?'pri':''}`} disabled={!aw.open} onClick={()=>setMenu('away')}>{aw.open?"📍 I'm still away":'Opens at 7:30 PM'}</button></Item>;
  const Home=()=>{const ms=members.map(m=>({...m,h:H(m.id)})).sort((a,b)=>b.h-a.h),mx=Math.max(1,...ms.map(m=>m.h)),h=H(u.uid),home=members.filter(m=>last(m.id)?.type==='in').length;
@@ -94,6 +95,8 @@ export default function App(){
   return <Item key={m.id} className="card row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{m.id===sp.ownerId&&<span className="mut"> · host</span>}
    <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}</div></div>{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
+  {owner&&<Item><h3>📣 Notify everyone</h3><p className="mut" style={{marginBottom:8}}>Your message is sent as a push notification to every member.</p><input placeholder="e.g. Water will be off at 3 PM" maxLength={140} value={an} onChange={e=>setAn(e.target.value)}/><button className="pri w" disabled={!an.trim()} onClick={sendAn}>Send notification</button></Item>}
+  {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p></div>)}</Item>}
   <Item><h3>Notice board</h3><div className="row"><input style={{margin:0}} placeholder="Post a note for everyone…" value={nt} onChange={e=>setNt(e.target.value)}/><button className="pri sm" onClick={post}>Post</button></div>
    {N.map(n=><div key={n.id} className="note"><b>{nm(n.uid)}</b> <span className="mut">{fmt(n.createdAt)}</span><p>{n.text}</p>{(owner||n.uid===u.uid)&&<button className="sm" onClick={()=>deleteDoc(doc(db,'spaces',sp.id,'notes',n.id))}>✕</button>}</div>)}{!N.length&&<p className="mut" style={{marginTop:10}}>No notes yet.</p>}</Item></List>;
 
@@ -108,22 +111,51 @@ export default function App(){
    {(s.before||s.after)&&<div className="mut">{s.before?'↩ started last cycle':'continues next cycle ↪'}</div>}</div><b style={{color:'var(--lamp)'}}>{dur((s.cb-s.ca)/36e5)}</b></div>{(s.ip||s.op)&&<div className="row" style={{marginTop:10}}>{proof(s.ip)}{proof(s.op)}</div>}</Item>)}
   {!S.length&&<Item><span className="mut">No time logged this cycle.</span></Item>}</List>};
 
- const Fixes=()=>{const L=owner?X:X.filter(x=>x.uid===u.uid);
-  const send=async()=>{const i=+new Date(f.i),o=+new Date(f.o);if(o<=i||!f.r.trim())return say('Time out must be after time in, and add a reason.');
-   await addDoc(col('exceptions'),{uid:u.uid,inTs:i,outTs:o,reason:f.r.trim(),status:'pending',createdAt:Date.now()});setF({...f,r:''});say('Request sent')};
-  return <List><Item><h3>Forgot to punch?</h3><p className="mut">Request a correction. {nm(sp.ownerId)} approves or denies it. Once approved, it replaces any punches inside that window.</p>
-   <label>Time in</label><input type="datetime-local" value={f.i} onChange={e=>setF({...f,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={f.o} onChange={e=>setF({...f,o:e.target.value})}/>
-   <label>Reason</label><input value={f.r} placeholder="Phone died, left charger…" onChange={e=>setF({...f,r:e.target.value})}/><button className="pri w" onClick={send}>Send request</button></Item>
+ const Fixes=()=>{const L=owner?X:X.filter(x=>x.uid===u.uid),days=[];for(let i=0;+dayAt(r[0],i)<r[1];i++)days.push(+dayAt(r[0],i));
+  const dd=daily(iv(u.uid,P,X,r),r),mx=Math.max(1,...dd),lead=new Date(days[0]).getDay(),now=Date.now(),tdy=+dayAt(now,0),
+   pd=d=>X.some(x=>x.uid===u.uid&&x.status==='pending'&&(x.cutA??x.inTs)<+dayAt(d,1)&&(x.cutB??x.outTs)>d),
+   kindName={add:'Add time',edit:'Change time',remove:'Remove session'};
+  return <List><Cycle off={off} set={setOff}/>
+   <Item><h3>Fix your hours</h3><p className="mut">Tap a day to add missing time, change a time in/out, or remove a session. {nm(sp.ownerId)} approves or denies it.</p>
+    <div className="cal">{['S','M','T','W','T','F','S'].map((w,i)=><div key={i} className="wd">{w}</div>)}{[...Array(lead)].map((_,i)=><div key={'e'+i}/>)}
+     {days.map((d,i)=><button key={d} disabled={d>now} className={`dc ${d===tdy?'today':''} ${pd(d)?'pend':''}`} onClick={()=>{buzz();setDy(d);setEf(null);setMenu('day')}}><div className="lvl" style={{height:dd[i]/mx*100+'%'}}/><b>{new Date(d).getDate()}</b><i>{dd[i]>0?(dd[i]<10?dd[i].toFixed(1):Math.round(dd[i]))+'h':''}</i></button>)}</div>
+    <div className="row sp mut" style={{marginTop:10}}><span>Fill = hours that day</span><span>🟡 = pending request</span></div></Item>
    <h3 style={{margin:'16px 0 10px'}}>{owner?'All requests':'My requests'}</h3>
-   {L.map(x=><Item key={x.id}><div className="row sp"><b>{nm(x.uid)}</b><span className={`tag t-${x.status}`}>{x.status}</span></div><p>{fmt(x.inTs)} → {fmt(x.outTs)} <span className="mut">({dur((x.outTs-x.inTs)/36e5)})</span></p><p className="mut">“{x.reason}”</p>
-    {owner&&x.status==='pending'&&<div className="row" style={{marginTop:10}}>{['approved','denied'].map(s=><button key={s} className={s==='approved'?'ok':'no'} style={{flex:1}} onClick={()=>{updateDoc(doc(db,'spaces',sp.id,'exceptions',x.id),{status:s});buzz()}}>{s==='approved'?'Approve':'Deny'}</button>)}</div>}</Item>)}
+   {L.map(x=>{const k=x.kind||'add';return <Item key={x.id}><div className="row sp"><b>{nm(x.uid)}</b><span className={`tag t-${x.status}`}>{x.status}</span></div>
+    <p><b>{kindName[k]}</b></p>
+    {k==='edit'&&<p className="mut">Was {fmt(x.origA)} → {fmt(x.origB)}</p>}
+    <p>{k==='remove'?'Remove ':k==='edit'?'Now ':''}{fmt(x.inTs)} → {fmt(x.outTs)} <span className="mut">({dur((x.outTs-x.inTs)/36e5)})</span></p><p className="mut">“{x.reason}”</p>
+    {owner&&x.status==='pending'&&<div className="row" style={{marginTop:10}}>{['approved','denied'].map(s=><button key={s} className={s==='approved'?'ok':'no'} style={{flex:1}} onClick={()=>{updateDoc(doc(db,'spaces',sp.id,'exceptions',x.id),{status:s,decidedAt:Date.now()});buzz()}}>{s==='approved'?'Approve':'Deny'}</button>)}</div>}
+    {x.uid===u.uid&&x.status==='pending'&&<button className="sm w" style={{marginTop:10}} onClick={()=>deleteDoc(doc(db,'spaces',sp.id,'exceptions',x.id))}>Cancel request</button>}</Item>})}
    {!L.length&&<Item><span className="mut">No requests yet.</span></Item>}</List>};
+
+ const DaySheet=()=>{const d0=dy,d1=+dayAt(dy,1),now=Date.now(),SS=pairs(u.uid,P,X).filter(s=>s.a<d1&&s.b>d0).sort((a,b)=>a.a-b.a),
+   PN=X.filter(x=>x.uid===u.uid&&x.status==='pending'&&(x.cutA??x.inTs)<d1&&(x.cutB??x.outTs)>d0).length,
+   title=new Date(d0).toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
+  const send=async()=>{const{mode,s,i,o,r}=ef;if(!r.trim())return say('Add a short reason.');
+   const q={uid:u.uid,kind:mode,reason:r.trim(),status:'pending',createdAt:Date.now()};
+   if(mode==='remove'){q.origA=q.cutA=q.inTs=s.a;q.origB=q.cutB=q.outTs=s.live?now:s.b}
+   else{const a=+new Date(i),b=+new Date(o);if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>now+6e4)return say("Time out can't be in the future.");
+    q.inTs=a;q.outTs=b;if(mode==='add'){q.cutA=a;q.cutB=b}else{q.origA=q.cutA=s.a;q.origB=q.cutB=s.live?now:s.b}}
+   try{await addDoc(col('exceptions'),q);setEf(null);setMenu(null);buzz();say('Request sent ✓')}catch(e){say('Failed: '+e.message,5000)}};
+  if(ef)return <><h2>{{add:'Add missing time',edit:'Change this session',remove:'Remove this session'}[ef.mode]}</h2><p className="mut" style={{margin:'6px 0 14px'}}>{title}</p>
+   {ef.mode==='remove'?<div className="sess"><b>{fmt(ef.s.a)} → {ef.s.live?'now':fmt(ef.s.b)}</b><div className="mut">This session stops counting once approved.</div></div>
+   :<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>{ef.mode==='add'&&<p className="mut" style={{marginBottom:10}}>Once approved, this replaces any punches inside that window.</p>}</>}
+   <label>Reason</label><input value={ef.r} placeholder={ef.mode==='remove'?'Pressed time in by mistake…':'Forgot to time out at 1 PM…'} onChange={e=>setEf({...ef,r:e.target.value})}/>
+   <button className="pri w" style={{marginBottom:8}} onClick={send}>Send request</button><button className="w" onClick={()=>setEf(null)}>Back</button></>;
+  return <><h2>{title}</h2><p className="mut" style={{margin:'4px 0 14px'}}>{dur(hrs(u.uid,P,X,[d0,d1]))} logged this day</p>
+   {PN>0&&<div className="warn">⏳ {PN} request{PN>1?'s':''} pending for this day.</div>}
+   {SS.map((s,i)=>{const b=s.live?now:s.b;return <div key={i} className="sess"><b>{fmt(s.a)} → {s.live?'now':fmt(s.b)}</b><div className="mut">{dur((b-s.a)/36e5)}{s.live?' · still timed in':''}{s.fix?' · approved fix':''}{s.ip?.auto?' · auto time-in':''}</div>
+    <div className="row" style={{marginTop:10}}><button className="sm" style={{flex:1}} onClick={()=>setEf({mode:'edit',s,i:iso(s.a),o:iso(b),r:''})}>✏️ Change times</button><button className="sm no" style={{flex:1}} onClick={()=>setEf({mode:'remove',s,r:''})}>🗑 Remove</button></div></div>})}
+   {!SS.length&&<p className="mut" style={{marginBottom:12}}>No time logged on this day.</p>}
+   <button className="pri w" onClick={()=>setEf({mode:'add',i:iso(d0+9*36e5),o:iso(Math.min(d0+17*36e5,now)),r:''})}>➕ Add missing time</button></>};
 
  const Bills=()=>{const key=String(r[0]),b=B.find(x=>x.id===key)||{},ps=b.ps??r[0],pe=b.pe??r[1]-864e5,rg=[ps,pe+864e5],days=Math.max(1,Math.round((rg[1]-rg[0])/864e5));
   const hm=members.map(m=>({...m,h:b.final?.[m.id]??hrs(m.id,P,X,rg)})),T=hm.reduce((t,m)=>t+m.h,0),due=new Date(new Date(pe).getFullYear(),new Date(pe).getMonth()+1,5),left=Math.ceil((due-Date.now())/864e5);
   const split=amt=>{const raw=hm.map(m=>(T?m.h/T:1/hm.length)*amt*100),fl=raw.map(Math.floor);let rem=Math.round(amt*100)-fl.reduce((a,c)=>a+c,0);
    raw.map((x,i)=>[x-fl[i],i]).sort((a,c)=>c[0]-a[0]).forEach(([,i])=>{if(rem>0){fl[i]++;rem--}});return fl.map(c=>c/100)};
   const se=split(b.elec||0),sw=split(b.water||0),tot=(b.elec||0)+(b.water||0),bref=doc(db,'spaces',sp.id,'bills',key);
+  const rate=T>0?tot/T:0,rangeH=days*24;
   const npend=X.filter(x=>x.status==='pending'&&x.inTs<rg[1]&&x.outTs>rg[0]).length,live=!b.final&&members.some(m=>last(m.id)?.type==='in');
   const submit=async ev=>{ev.preventDefault();const g=new FormData(ev.target);await setDoc(bref,{elec:+g.get('e')||0,water:+g.get('w')||0,ps:s2d(g.get('s')),pe:s2d(g.get('x'))},{merge:true});say('Bills saved');buzz()};
   const csv=()=>{const rows=[['Name','Hours','Share %','Electric','Water','Total','Paid'],...hm.map((m,i)=>[m.n,m.h.toFixed(2),(T?m.h/T*100:100/hm.length).toFixed(1),se[i].toFixed(2),sw[i].toFixed(2),(se[i]+sw[i]).toFixed(2),b.paid?.[m.id]?'yes':'no'])],a=document.createElement('a');
@@ -133,10 +165,15 @@ export default function App(){
     <p className="mut">{days} days · {d2s(ps)} to {d2s(pe)}{tot?` · ${peso(tot/days)} per day`:''}{b.final?' · 🔒 finalized':''}</p></Item>
    {npend>0&&!b.final&&<div className="warn">{npend} fix request{npend>1?'s':''} still pending in this period. Totals will change once approved.</div>}
    {live&&tot>0&&<div className="warn">Someone is still timed in, so their hours keep counting until they time out. Finalize after everyone is out.</div>}
+   {tot>0&&<Item><h3>How your share is computed</h3>
+    <div className="row sp"><span className="mut">Period length</span><b>{days} days · {rangeH}h</b></div>
+    <div className="row sp" style={{marginTop:6}}><span className="mut">Hours in the dorm (everyone)</span><b>{dur(T)}</b></div>
+    <div className="row sp" style={{marginTop:6}}><span className="mut">Rate per dorm hour</span><b>{T?peso(rate):'–'}</b></div>
+    <p className="mut" style={{marginTop:10}}>Total bill ÷ total dorm hours = the hourly rate. Each person pays the rate × the hours they were actually in, so everyone's share adds up to exactly the full bill.</p></Item>}
    {owner&&<Item><h3>Set this period's bills</h3><form key={key+tot+ps+pe} onSubmit={submit}><label>Electric bill (₱)</label><input name="e" type="number" step="any" inputMode="decimal" defaultValue={b.elec||''}/><label>Water bill (₱)</label><input name="w" type="number" step="any" inputMode="decimal" defaultValue={b.water||''}/>
     <label>Period starts</label><input name="s" type="date" defaultValue={d2s(ps)} required/><label>Period ends</label><input name="x" type="date" defaultValue={d2s(pe)} required/><button className="pri w">Save & calculate</button></form></Item>}
    {tot?<>{hm.map((m,i)=>{const s=T?m.h/T:1/hm.length,pd=b.paid?.[m.id];
-    return <Item key={m.id}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b><div className="mut">{dur(m.h)} of {dur(T)} · {(s*100).toFixed(1)}%</div></div><div className="big" style={{fontSize:24}}>{peso(se[i]+sw[i])}</div></div>
+    return <Item key={m.id}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b><div className="mut">{dur(m.h)} of {dur(T)} · {(s*100).toFixed(1)}%{T?` · ${peso(rate)}/h`:''}</div></div><div className="big" style={{fontSize:24}}>{peso(se[i]+sw[i])}</div></div>
     <div className="row sp mut" style={{marginTop:10}}><span>⚡ {peso(se[i])}</span><span>💧 {peso(sw[i])}</span>{owner?<button className={`sm ${pd?'ok':''}`} onClick={()=>updateDoc(bref,{['paid.'+m.id]:!pd})}>{pd?'Paid ✓':'Mark paid'}</button>:pd&&<span className="tag t-approved">Paid</span>}</div></Item>})}
     <Item><div className="row sp"><span className="mut">Total billed</span><b>{peso(tot)}</b></div><p className="mut" style={{marginTop:6}}>Each share = member hours ÷ total hours × bill. Cents are allocated so the shares add up exactly.</p>
      <div className="row" style={{marginTop:12}}><button className="sm" style={{flex:1}} onClick={csv}>⬇ Export CSV</button>{owner&&<button className={`sm ${b.final?'':'pri'}`} style={{flex:1}} onClick={()=>setDoc(bref,{final:b.final?deleteField():Object.fromEntries(hm.map(m=>[m.id,m.h]))},{merge:true})}>{b.final?'Reopen':'🔒 Finalize'}</button>}</div></Item></>
@@ -151,6 +188,7 @@ export default function App(){
    {(menu==='punch'||menu==='away')&&<><h2>{menu==='away'?"Confirm you're still away":`Time ${on?'out':'in'}`}</h2><p className="mut" style={{margin:'6px 0 16px'}}>Add proof so your dormmates know it's real.</p>
     <input id="cam" type="file" accept="image/*" capture="user" hidden onChange={e=>photo(e.target.files[0],menu==='away'?'away':undefined)}/>
     <button className="pri w" style={{marginBottom:8}} onClick={()=>document.getElementById('cam').click()}>📸 Take a picture</button><button className="w" onClick={()=>loc(menu==='away'?'away':undefined)}>📍 Send my location</button></>}
+   {menu==='day'&&dy!=null&&DaySheet()}
    {menu==='spaces'&&<><h2 style={{marginBottom:12}}>Your spaces</h2>{spaces.map(s=><button key={s.id} className={`sp-row ${s.id===sp.id?'cur':''}`} onClick={()=>open(s.id)}><div style={{flex:1}}><b>{s.name}</b><div className="mut">{s.members.length} members{s.ownerId===u.uid?' · you are host':''}</div></div>{s.id===sp.id&&'✓'}</button>)}
     <div className="card row sp" style={{marginTop:12}}><div><div className="mut">Invite code</div><b style={{fontSize:22,letterSpacing:2}}>{sp.code}</b></div><button className="sm" onClick={()=>navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'))}>Copy</button></div>
     <SpaceForm u={u} open={open} say={say}/></>}
