@@ -11,11 +11,17 @@ service cloud.firestore {
       match /punches/{p} {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
+        allow delete: if own(s);
       }
       match /exceptions/{e} {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending';
-        allow update: if own(s);
+        allow update, delete: if own(s);
+      }
+      match /notes/{n} {
+        allow read: if mem(s);
+        allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
+        allow delete: if own(s) || resource.data.uid == request.auth.uid;
       }
       match /bills/{b} {
         allow read: if mem(s);
