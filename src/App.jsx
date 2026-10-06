@@ -3,7 +3,7 @@ import {motion,AnimatePresence,animate,useDragControls} from 'framer-motion';
 import {onAuthStateChanged,signInWithPopup,signOut,deleteUser,reauthenticateWithPopup} from 'firebase/auth';
 import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where,orderBy,limit,onSnapshot,getDocs,arrayUnion,arrayRemove} from 'firebase/firestore';
 import {auth,db,gp} from './firebase';
-import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,norm,away,shrink} from './lib';
+import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,norm,away,fd,dayWord,notify,shrink} from './lib';
 
 const buzz=()=>navigator.vibrate?.(25);
 function Num({v,d=1}){const r=useRef();useEffect(()=>{const c=animate(0,v,{duration:1,ease:'easeOut',onUpdate:x=>r.current&&(r.current.textContent=x.toFixed(d))});return()=>c.stop()},[v]);return <span ref={r}>0</span>}
@@ -39,7 +39,7 @@ export default function App(){
   return()=>un.forEach(x=>x())},[sp?.id]);
  const open=id=>{setSid(id);setTab('home');setOff(0);setMenu(null)};
 
- useEffect(()=>{if(!u)return;const a=away(u.uid,P);if(a?.open&&!localStorage.getItem('nf'+a.D)){localStorage.setItem('nf'+a.D,1);const t='Confirm you are still away before 8:00 PM, or you will be timed in automatically.';say('⏰ '+t,6000);if(window.Notification?.permission==='granted')new Notification('DormMates',{body:t})}});
+ useEffect(()=>{if(!u)return;const a=away(u.uid,P);if(a?.open&&!localStorage.getItem('nf'+a.D)){localStorage.setItem('nf'+a.D,1);const t='Confirm you are still away before 8:00 PM or you will be timed in.';say('⏰ '+t,6000);notify('⏰ Confirm you are away',t)}});
  const orbs=<><div className="orb o1"/><div className="orb o2"/></>;
  if(!ready||(u&&!loaded))return <div className="login"><motion.div animate={{rotate:360}} transition={{repeat:Infinity,duration:1.4,ease:'linear'}} className="logo" style={{margin:'auto'}}><i/></motion.div></div>;
  if(!u)return <main>{orbs}<div className="login">
@@ -57,10 +57,10 @@ export default function App(){
 
  async function save(pr,type){type=type||(on?'out':'in');await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr});setMenu(null);buzz();
   if(type==='away')return say('Confirmed ✓ Next check is tomorrow 7:30–8:00 PM');setBurst(b=>b+1);
-  say(type==='in'?'Timed in ✓':'Timed out ✓ Auto time-in tomorrow 8:00 PM unless you confirm from 7:30 PM',type==='in'?2200:6000)}
+  if(type==='in')return say('Timed in ✓');const m=`Auto time-in ${dayWord(fd(Date.now()))} at 8:00 PM. Confirm from 7:30 PM to stay out.`;say('Timed out ✓\n'+m,6000);notify('Timed out ✓',m)}
  const photo=async(fl,t)=>fl&&save({photo:await shrink(fl)},t);
  const loc=t=>navigator.geolocation.getCurrentPosition(p=>save({loc:{lat:p.coords.latitude,lng:p.coords.longitude}},t),()=>say('Location blocked. Use a picture instead.'),{enableHighAccuracy:true,timeout:15000});
- async function leave(s){const rest=s.members.filter(m=>m!==u.uid),ref=doc(db,'spaces',s.id);if(!rest.length)return deleteDoc(ref);
+ async function leave(s){const rest=s.members.filter(m=>m!==u.uid),ref=doc(db,'spaces',s.id);if(!rest.length)return wipe(s.id);
   const up={members:arrayRemove(u.uid),['names.'+u.uid]:deleteField()};if(s.ownerId===u.uid)up.ownerId=rest[0];return updateDoc(ref,up)}
  const switchAcc=async()=>{await signOut(auth);signInWithPopup(auth,gp).catch(e=>say(e.message))};
  async function delAcc(){if(!confirm('Delete your account? You will leave all spaces. Your past hours stay in the group records.'))return;
@@ -68,11 +68,13 @@ export default function App(){
 
  async function delSpace(){if(!confirm(`Delete "${sp.name}" for everyone? All punches, fixes, bills and notes will be removed.`))return;
   if(prompt(`Final check. Type the space name exactly to delete it forever:\n${sp.name}`)!==sp.name)return say('Name did not match. Nothing was deleted.');
-  for(const c of ['punches','exceptions','bills','notes']){const q=await getDocs(collection(db,'spaces',sp.id,c));await Promise.all(q.docs.map(d=>deleteDoc(d.ref)))}
-  await deleteDoc(doc(db,'spaces',sp.id));setMenu(null);setSid(null);say('Space deleted')}
- const askNotif=()=>window.Notification?Notification.requestPermission().then(p=>say(p==='granted'?'Reminders on':'Reminders blocked in browser settings')):say('Not supported on this browser');
+  try{await wipe(sp.id);setMenu(null);setSid(null);say('Space and all its data deleted')}catch(e){say('Delete failed: '+e.message+' Publish the latest firestore.rules.',6000)}}
+ const askNotif=async()=>{if(!window.Notification)return say('Not supported here. On iPhone, add the app to your Home Screen first.',5000);
+  if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your browser settings.',5000);
+  const ok=await notify('DormMates reminders are on 🔔','You will be reminded at 7:30 PM before your 8:00 PM auto time-in.');say(ok?'Reminders on. Check your notifications.':'Allowed, but the notification could not be shown.',4000)};
+ async function wipe(id){for(const c of ['punches','exceptions','bills','notes']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('')};
- const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {new Date(aw.D).toLocaleDateString([],{weekday:'long'})} 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
+ const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
   <button className={`w ${aw.open?'pri':''}`} disabled={!aw.open} onClick={()=>setMenu('away')}>{aw.open?"📍 I'm still away":'Opens at 7:30 PM'}</button></Item>;
  const Home=()=>{const ms=members.map(m=>({...m,h:H(m.id)})).sort((a,b)=>b.h-a.h),mx=Math.max(1,...ms.map(m=>m.h)),h=H(u.uid),home=members.filter(m=>last(m.id)?.type==='in').length;
   return <List>

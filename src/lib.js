@@ -11,16 +11,21 @@ export function cyc(off=0){const n=new Date(),m=n.getMonth()-(n.getDate()<14?1:0
 export const cycLabel=r=>`${new Date(r[0]).toLocaleDateString([],{month:'short',day:'numeric'})} – ${new Date(r[1]-1).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})}`;
 // 8:00 PM of the day after t
 export const dl=t=>{const d=new Date(t);return +new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,20)};
+// first auto time-in after a time out: today 8 PM if timed out before 7:30 PM, otherwise tomorrow 8 PM
+export const fd=t=>{const d=new Date(t),e=+new Date(d.getFullYear(),d.getMonth(),d.getDate(),20);return t<e-18e5?e:dl(t)};
+export const dayWord=t=>{const d=new Date(t),n=new Date(),k=x=>x.toDateString();return k(d)===k(n)?'today':k(d)===k(new Date(+n+864e5))?'tomorrow':d.toLocaleDateString([],{weekday:'long'})};
+export async function notify(title,body){try{if(window.Notification?.permission!=='granted')return false;const r=await navigator.serviceWorker?.ready;
+ if(r?.showNotification){await r.showNotification(title,{body,icon:'/icon.svg',badge:'/icon.svg',vibrate:[120,60,120],tag:title});return true}new Notification(title,{body,icon:'/icon.svg'});return true}catch{return false}}
 // punches + virtual auto time-ins: after a time out, if the person doesn't confirm they are away between 7:30-8:00 PM, they are timed in at 8:00 PM
 export function norm(uid,P,now=Date.now()){const a=P.filter(p=>p.uid===uid&&p.type!=='away').sort((x,y)=>x.ts-y.ts),aw=P.filter(p=>p.uid===uid&&p.type==='away').map(p=>p.ts),o=[];
  for(let i=0;i<a.length;i++){const p=a[i];o.push(p);
-  if(p.type==='out'){let D=dl(p.ts);const n=a[i+1];
+  if(p.type==='out'){let D=fd(p.ts);const n=a[i+1];
    while(D<=now){if(n&&n.type==='in'&&n.ts<=D)break;
     if(aw.some(t=>t>=D-18e5&&t<D)){D=dl(D);continue}
     o.push({uid,type:'in',ts:D,auto:true});while(a[i+1]?.type==='in')i++;break}}}
  return o}
 export function away(uid,P,now=Date.now()){const l=norm(uid,P,now).at(-1);if(!l||l.type!=='out')return null;
- const aw=P.filter(p=>p.uid===uid&&p.type==='away').map(p=>p.ts);let D=dl(l.ts);while(aw.some(t=>t>=D-18e5&&t<D))D=dl(D);
+ const aw=P.filter(p=>p.uid===uid&&p.type==='away').map(p=>p.ts);let D=fd(l.ts);while(aw.some(t=>t>=D-18e5&&t<D))D=dl(D);
  return{D,open:now>=D-18e5&&now<D}}
 // sessions; an approved fix OVERWRITES any punch session it overlaps
 export function pairs(uid,P,X,now=Date.now()){const out=[];let o=null;
