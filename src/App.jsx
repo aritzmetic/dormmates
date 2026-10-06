@@ -37,7 +37,7 @@ export default function App(){
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
  useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
-  const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(5)),d=>setA(m(d)))];
+  const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(10)),d=>setA(m(d)))];
   return()=>un.forEach(x=>x())},[sp?.id]);
  const open=id=>{setSid(id);setTab('home');setOff(0);setMenu(null)};
 
@@ -78,6 +78,7 @@ export default function App(){
   catch(e){say('Could not turn on push: '+e.message,6000)}};
  async function wipe(id){for(const c of ['punches','exceptions','bills','notes','announcements']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('')};
+ const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
  const sendAn=async()=>{if(!an.trim())return;try{await addDoc(col('announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
  const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
   <button className={`w ${aw.open?'pri':''}`} disabled={!aw.open} onClick={()=>setMenu('away')}>{aw.open?"📍 I'm still away":'Opens at 7:30 PM'}</button></Item>;
@@ -96,9 +97,9 @@ export default function App(){
    <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}</div></div>{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
   {owner&&<Item><h3>📣 Notify everyone</h3><p className="mut" style={{marginBottom:8}}>Your message is sent as a push notification to every member.</p><input placeholder="e.g. Water will be off at 3 PM" maxLength={140} value={an} onChange={e=>setAn(e.target.value)}/><button className="pri w" disabled={!an.trim()} onClick={sendAn}>Send notification</button></Item>}
-  {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p></div>)}</Item>}
+  {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p>{owner&&<button className="sm" onClick={()=>delItem('announcements',a.id)}>✕</button>}</div>)}</Item>}
   <Item><h3>Notice board</h3><div className="row"><input style={{margin:0}} placeholder="Post a note for everyone…" value={nt} onChange={e=>setNt(e.target.value)}/><button className="pri sm" onClick={post}>Post</button></div>
-   {N.map(n=><div key={n.id} className="note"><b>{nm(n.uid)}</b> <span className="mut">{fmt(n.createdAt)}</span><p>{n.text}</p>{(owner||n.uid===u.uid)&&<button className="sm" onClick={()=>deleteDoc(doc(db,'spaces',sp.id,'notes',n.id))}>✕</button>}</div>)}{!N.length&&<p className="mut" style={{marginTop:10}}>No notes yet.</p>}</Item></List>;
+   {N.map(n=><div key={n.id} className="note"><b>{nm(n.uid)}</b> <span className="mut">{fmt(n.createdAt)}</span><p>{n.text}</p>{(owner||n.uid===u.uid)&&<button className="sm" onClick={()=>delItem('notes',n.id)}>✕</button>}</div>)}{!N.length&&<p className="mut" style={{marginTop:10}}>No notes yet.</p>}</Item></List>;
 
  const History=()=>{const w0=hf==='all'?members:members.filter(m=>m.id===hf),who=w0.length?w0:members,dds=who.map(m=>daily(iv(m.id,P,X,r),r)),dd=dds[0].map((_,i)=>dds.reduce((t,d)=>t+d[i],0)),mx=Math.max(1,...dd),S=who.flatMap(m=>sessions(m.id,P,X,r)).sort((x,y)=>y.a-x.a);
   return <List><Cycle off={off} set={setOff}/>
