@@ -5,6 +5,7 @@ import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where
 import {auth,db,gp} from './firebase';
 import {enablePush} from './push';
 import {ping} from './notify';
+import ReceiptView from './ReceiptView';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,cycLabel,iv,hrs,daily,sessions,pairs,shares,norm,away,fd,dayWord,notify,shrink} from './lib';
 
 const buzz=()=>navigator.vibrate?.(25);
@@ -28,7 +29,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[an,setAn]=useState(''),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rp,setRp]=useState(null);
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[an,setAn]=useState(''),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rp,setRp]=useState(null),[rv,setRv]=useState(null);
  const iso=t=>new Date(t-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16),[f,setF]=useState({i:iso(Date.now()-9*36e5),o:iso(Date.now()),r:''});
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
  useEffect(()=>{const t=setInterval(()=>tick(n=>n+1),1000);return()=>clearInterval(t)},[]);
@@ -81,6 +82,7 @@ export default function App(){
  async function wipe(id){for(const c of ['punches','exceptions','bills','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
+ const dlR=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
  const savePf=async()=>{try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,inOn:!!rp.inOn,inAt:rp.inAt,outOn:!!rp.outOn,outAt:rp.outAt,days:rp.days,updatedAt:Date.now()},{merge:true});setMenu(null);buzz();say(window.Notification?.permission==='granted'?'Reminders saved ✓':'Saved. Now tap "Enable reminders" so your phone can receive them.',5000)}catch(e){say('Failed: '+e.message,5000)}};
  const sendAn=async()=>{if(!an.trim())return;try{const ar=await addDoc(col('announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');ping({sid:sp.id,kind:'announcement',id:ar.id});buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
  const aw=!on&&away(u.uid,P),awayCard=aw&&<Item><h3>Auto time-in {dayWord(aw.D)} at 8:00 PM</h3><p className="mut" style={{marginBottom:12}}>Still not in the dorm? Confirm between 7:30 and 8:00 PM with a picture or your location. If you don't, you're timed in automatically.</p>
@@ -184,7 +186,7 @@ export default function App(){
    hm.forEach((m,i)=>{const a=E.amounts[i],w=W.amounts[i];bt.set(doc(db,'spaces',sp.id,'receipts',`${key}_${m.id}`),{uid:m.id,name:m.n,cyc:key,space:sp.name,host:nm(sp.ownerId),ps,pe,days,hours:+m.h.toFixed(4),totalHours:+T.toFixed(4),elec:b.elec||0,water:b.water||0,pct:cfg.pct,nFixed:nf,inFixed:fx.includes(m.id),
      eBase:a.base,eUse:a.use,wBase:w.base,wUse:w.use,poolEBase:E.base,poolEUse:E.rest,poolWBase:W.base,poolWUse:W.rest,total:+(a.total+w.total).toFixed(2),daily:daily(iv(m.id,P,X,rg),rg).map(v=>+v.toFixed(2)),due:dueTs,issuedAt:now})});
    bt.update(bref,{receiptsAt:now});await bt.commit();ping({sid:sp.id,kind:'receipts',id:key});buzz();say('Receipts sent to every member 🧾',4000)}catch(e){say('Failed: '+e.message,6000)}};
-  const dl=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!b.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
+  const dl=dlR,view=(list,i=0)=>setRv({list,i});
   const nudge=()=>{ping({sid:sp.id,kind:'remindunpaid',id:key});say('Reminder sent to unpaid members 🔔')};
   return <List><Cycle off={off} set={setOff} d={cd}/>
    <Item className="card hero"><span className="mut">Pay by {dayAt(dueTs,0).toLocaleDateString([],{month:'long',day:'numeric'})}{!b.due&&owner?' · default, set it below':''}</span><div className="big">{overdue?'Overdue':<><Num v={left} d={0}/><small> day{left===1?'':'s'} left</small></>}</div>
@@ -217,9 +219,9 @@ export default function App(){
     {b.final&&<Item><h3>🧾 Receipts</h3>
      {owner?<><p className="mut" style={{marginBottom:10}}>{b.receiptsAt?`Sent ${fmt(b.receiptsAt)}. Regenerate if you reopened and changed anything.`:'Create a PDF receipt for each member showing exactly how their share was computed. Members see only their own.'}</p>
       <button className="pri w" onClick={makeReceipts}>{b.receiptsAt?'🔄 Regenerate & resend':'🧾 Generate & send receipts'}</button>
-      {RC.length>0&&<>{hm.filter(m=>RC.some(x=>x.uid===m.id)).map(m=><div key={m.id} className="row sp" style={{marginTop:10}}><span>{m.n}</span><button className="sm" onClick={()=>dl([RC.find(x=>x.uid===m.id)])}>⬇ PDF</button></div>)}
+      {RC.length>0&&<>{hm.filter(m=>RC.some(x=>x.uid===m.id)).map(m=><div key={m.id} className="row sp" style={{marginTop:10}}><span>{m.n}</span><div className="row" style={{gap:8}}><button className="sm" onClick={()=>view(hm.map(z=>RC.find(x=>x.uid===z.id)).filter(Boolean),hm.filter(z=>RC.some(x=>x.uid===z.id)).findIndex(z=>z.id===m.id))}>👁 View</button><button className="sm" onClick={()=>dl([RC.find(x=>x.uid===m.id)])}>⬇ PDF</button></div></div>)}
        <button className="sm w" style={{marginTop:12}} onClick={()=>dl(hm.map(m=>RC.find(x=>x.uid===m.id)).filter(Boolean))}>⬇ All receipts (one PDF)</button></>}</>
-     :myRc?<><p className="mut" style={{marginBottom:10}}>Your receipt shows every step of how your share was computed.</p><button className="pri w" onClick={()=>dl([myRc])}>⬇ Download my receipt (PDF)</button></>
+     :myRc?<><p className="mut" style={{marginBottom:10}}>Your receipt shows every step of how your share was computed.</p><button className="pri w" style={{marginBottom:8}} onClick={()=>view([myRc])}>👁 View my receipt</button><button className="w" onClick={()=>dl([myRc])}>⬇ Download PDF</button></>
       :<p className="mut">Your receipt will appear here once the host sends it.</p>}</Item>}</>
    :<Item><span className="mut">The host hasn't entered this period's bills yet.</span></Item>}</List>};
 
@@ -246,6 +248,7 @@ export default function App(){
     <button className="w" style={{marginBottom:8}} onClick={switchAcc}>🔄 Switch account</button><button className="w" style={{marginBottom:8}} onClick={()=>signOut(auth)}>Sign out</button>
     <button className="w" style={{marginBottom:8}} onClick={async()=>{if(confirm(`Leave ${sp.name}?`)){await leave(sp);setMenu(null)}}}>Leave "{sp.name}"</button>{owner&&<button className="w" style={{marginBottom:8,color:'var(--bad)'}} onClick={delSpace}>🗑 Delete this space (host only)</button>}<button className="w" style={{marginBottom:8}} onClick={askNotif}>🔔 Enable notifications</button><button className="w" style={{marginBottom:8}} onClick={()=>{setRp({inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6],...(PF||{})});setMenu('remind')}}>⏰ My reminder times</button><button className="no w" onClick={delAcc}>Delete my account</button></>}
   </Sheet>}</AnimatePresence>
+  <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>
   <nav>{T.map(([k,i,n])=><button key={k} className={tab===k?'on':''} onClick={()=>{setTab(k);setOff(0);buzz()}}>{tab===k&&<motion.div layoutId="pill" className="pill" transition={{type:'spring',stiffness:420,damping:34}}/>}<span>{i}</span>{n}{k==='fixes'&&pend>0&&<em>{pend}</em>}</button>)}</nav></>}
