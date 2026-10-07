@@ -69,3 +69,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .dc.today{border-color:var(--lamp)}.dc.pend::after{content:'';position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:50%;background:var(--lamp);z-index:2}
 .dc:disabled{opacity:.3}
 .sess{background:var(--card2);border-radius:16px;padding:12px;margin-bottom:10px}
+
+/* selects, checkboxes, reminder rows */
+select{display:block;width:100%;height:48px;background:#120b26;border:1.5px solid #3d3180;color:var(--ink);border-radius:12px;padding:0 11px;font:inherit;margin:6px 0 12px;-webkit-appearance:none;appearance:none}
+input[type=checkbox]{width:22px;height:22px;min-width:22px;height:22px;margin:0;display:inline-block;-webkit-appearance:auto;appearance:auto;accent-color:var(--lamp)}
+.chk{display:flex;align-items:center;gap:12px;padding:9px 0;font-size:15px;color:var(--ink)}
+input[type=time],input[type=datetime-local],input[type=date]{color-scheme:dark}

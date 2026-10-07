@@ -1,6 +1,7 @@
 import {auth,db,push,who,others} from './_lib.js';
 
 const tf=ts=>new Date(ts).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Manila'});
+const dd=ts=>new Date(ts).toLocaleDateString('en-PH',{month:'short',day:'numeric',timeZone:'Asia/Manila'});
 const money=n=>'₱'+(+n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const cut=(t,n=140)=>String(t||'').slice(0,n);
 const KIND={add:'Add time',edit:'Change time',remove:'Remove session'};
@@ -46,7 +47,7 @@ export default async function handler(req,res){
       const{d}=await get('bills');
       if(!owner||!d||!(d.elec||d.water))return skip();
       to=others(sp,uid);
-      msg={title:'💡 Bills updated',body:`Electric ${money(d.elec)} · Water ${money(d.water)}. Open the app to see your share.`,tag:'bills-'+id};
+      msg={title:'💡 Bills updated',body:`Electric ${money(d.elec)} · Water ${money(d.water)}.${d.due?` Pay by ${dd(d.due)}.`:''} Open the app to see your share.`,tag:'bills-'+id};
     }
     else if(kind==='final'){
       const{d}=await get('bills');
@@ -59,6 +60,25 @@ export default async function handler(req,res){
       if(!owner||!d?.paid?.[target]||!(sp.members||[]).includes(target))return skip();
       to=[target];
       msg={title:'✅ Payment received',body:'The host marked your bill as paid.',tag:'paid-'+id};
+    }
+    else if(kind==='fixdue'){
+      const{d}=await get('bills');
+      if(!owner||!d?.fixDue)return skip();
+      to=others(sp,uid);
+      msg={title:'⏳ Fix request deadline set',body:`Requests for this cycle close ${dd(d.fixDue)}, ${tf(d.fixDue)}. Send yours before then.`,tag:'fixdue-'+id};
+    }
+    else if(kind==='receipts'){
+      const{r,d}=await get('bills');
+      if(!owner||!d?.receiptsAt||!fresh(d.receiptsAt)||d.rcPushed===d.receiptsAt)return skip();
+      await r.update({rcPushed:d.receiptsAt});to=others(sp,uid);
+      msg={title:'🧾 Your receipt is ready',body:`${sp.name}: open the Bills tab to download your PDF receipt.`,tag:'receipt-'+id};
+    }
+    else if(kind==='remindunpaid'){
+      const{r,d}=await get('bills');
+      if(!owner||!d||!(d.elec||d.water)||(d.nudgeAt&&Date.now()-d.nudgeAt<36e5))return skip();
+      await r.update({nudgeAt:Date.now()});
+      to=(sp.members||[]).filter(m=>m!==uid&&!d.paid?.[m]);
+      msg={title:'💡 Friendly bill reminder',body:`${sp.name}: you still have an unpaid bill${d.due?` (pay by ${dd(d.due)})`:''}. Open the app to see your share.`,tag:'nudge-'+id};
     }
     else if(kind==='fixnew'){
       const{r,d}=await get('exceptions');

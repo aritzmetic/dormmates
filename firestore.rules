@@ -5,26 +5,31 @@ service cloud.firestore {
     function mem(s) { return request.auth != null && request.auth.uid in sp(s).members; }
     function own(s) { return request.auth != null && sp(s).ownerId == request.auth.uid; }
 
+    // fix requests are open unless that cycle is finalized or its fix deadline has passed
+    function fixOpen(s, c) {
+      let p = /databases/$(d)/documents/spaces/$(s)/bills/$(c);
+      return !exists(p)
+        || (get(p).data.get('final', null) == null
+            && (get(p).data.get('fixDue', null) == null || request.time.toMillis() < get(p).data.fixDue));
+    }
+
     match /spaces/{s} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
       allow update: if request.auth != null && (
-        // host: anything, as long as the new host is still a member (covers host leaving)
+        // host: anything (cycle day, rename...), as long as the new host is still a member
         (resource.data.ownerId == request.auth.uid
           && request.resource.data.ownerId in request.resource.data.members)
         // members: only touch members/names, only for themselves
         || (request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members','names'])
           && (
-            // join
             (!(request.auth.uid in resource.data.members)
               && request.auth.uid in request.resource.data.members
               && request.resource.data.members.size() == resource.data.members.size() + 1)
-            // leave
             || (request.auth.uid in resource.data.members
               && !(request.auth.uid in request.resource.data.members)
               && request.resource.data.members.size() == resource.data.members.size() - 1)
-            // refresh own name/photo
             || (request.auth.uid in resource.data.members
               && request.resource.data.members.size() == resource.data.members.size())
           )));
@@ -37,7 +42,9 @@ service cloud.firestore {
       }
       match /exceptions/{e} {
         allow read: if mem(s);
-        allow create: if mem(s) && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending';
+        allow create: if mem(s) && request.resource.data.uid == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.cyc is string && fixOpen(s, request.resource.data.cyc);
         allow update: if own(s);
         allow delete: if own(s) || (request.auth != null && resource.data.uid == request.auth.uid && resource.data.status == 'pending');
       }
@@ -55,12 +62,22 @@ service cloud.firestore {
         allow create: if own(s) && request.resource.data.uid == request.auth.uid;
         allow delete: if own(s);
       }
+      // PDF receipt data: a member can read only their own, the host can read and write all
+      match /receipts/{r} {
+        allow read: if mem(s) && (own(s) || resource.data.uid == request.auth.uid);
+        allow write: if own(s);
+      }
     }
 
     // push-notification tokens (one doc per phone)
     match /tokens/{t} {
       allow create, update: if request.auth != null && request.resource.data.uid == request.auth.uid;
       allow read, delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    // each person's own custom reminder times
+    match /prefs/{u} {
+      allow read, write: if request.auth != null && request.auth.uid == u;
     }
   }
 }

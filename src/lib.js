@@ -6,8 +6,8 @@ export const peso=n=>'₱'+(+n||0).toLocaleString(undefined,{minimumFractionDigi
 export const d2s=t=>new Date(t-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
 export const s2d=v=>{const[y,m,d]=v.split('-');return +new Date(y,m-1,d)};
 export const dayAt=(s,i)=>{const d=new Date(s);return new Date(d.getFullYear(),d.getMonth(),d.getDate()+i)};
-// cycle = 14th of previous month -> 13th of current month (end exclusive)
-export function cyc(off=0){const n=new Date(),m=n.getMonth()-(n.getDate()<14?1:0)+off;return[+new Date(n.getFullYear(),m,14),+new Date(n.getFullYear(),m+1,14)]}
+// cycle starts on `day` of the month (host setting, default 14) and ends the day before the next one (end exclusive)
+export function cyc(off=0,day=14){const n=new Date(),m=n.getMonth()-(n.getDate()<day?1:0)+off;return[+new Date(n.getFullYear(),m,day),+new Date(n.getFullYear(),m+1,day)]}
 export const cycLabel=r=>`${new Date(r[0]).toLocaleDateString([],{month:'short',day:'numeric'})} – ${new Date(r[1]-1).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})}`;
 // 8:00 PM of the day after t
 export const dl=t=>{const d=new Date(t);return +new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,20)};
@@ -44,3 +44,15 @@ export function daily(ivs,[s,e]){const d=[];for(let i=0;+dayAt(s,i)<e;i++){const
 // a session that crosses 12AM of the 14th stays one session; each cycle only counts its own part
 export const sessions=(uid,P,X,[s,e])=>pairs(uid,P,X).filter(x=>x.a<e&&x.b>s).map(x=>({...x,uid,ca:Math.max(x.a,s),cb:Math.min(x.b,e),before:x.a<s,after:x.b>e})).sort((x,y)=>y.a-x.a);
 export const shrink=f=>new Promise(res=>{const im=new Image();im.onload=()=>{const s=720/Math.max(im.width,im.height,720),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.6))};im.src=URL.createObjectURL(f)});
+
+// Bill split. `pct`% of the bill is the base pool, split equally among the `fixed` members only.
+// The rest is split by actual hours among EVERYONE. No fixed members selected -> 100% by hours.
+// Cents are allocated with the largest-remainder method so shares add up exactly to the bill.
+export function shares(amt,ids,hours,fixed=[],pct=25){
+ const n=ids.length;if(!n)return{amounts:[],base:0,rest:0,nf:0};
+ const T=hours.reduce((a,c)=>a+c,0),F=ids.map(id=>fixed.includes(id)),nf=F.filter(Boolean).length,
+  total=Math.round((+amt||0)*100),base=nf?Math.round(total*Math.min(100,Math.max(0,+pct||0))/100):0,rest=total-base,
+  rb=F.map(f=>f?base/nf:0),ru=hours.map(h=>(T?h/T:1/n)*rest),raw=rb.map((x,i)=>x+ru[i]),fl=raw.map(Math.floor);
+ let rem=total-fl.reduce((a,c)=>a+c,0);
+ raw.map((x,i)=>[x-fl[i],i]).sort((a,c)=>c[0]-a[0]).forEach(([,i])=>{if(rem>0){fl[i]++;rem--}});
+ return{amounts:fl.map((t,i)=>{const b=Math.min(t,Math.round(rb[i]));return{base:b/100,use:(t-b)/100,total:t/100}}),base:base/100,rest:rest/100,nf}}
