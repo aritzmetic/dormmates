@@ -4,7 +4,7 @@ const tf=ts=>new Date(ts).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-d
 const dd=ts=>new Date(ts).toLocaleDateString('en-PH',{month:'short',day:'numeric',timeZone:'Asia/Manila'});
 const money=n=>'₱'+(+n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const cut=(t,n=140)=>String(t||'').slice(0,n);
-const KIND={add:'Add time',edit:'Change time',remove:'Remove session'};
+const KIND={add:'Add time',in:'Add time in',out:'Add time out',edit:'Edit session',remove:'Remove session'};
 
 // The app calls this right after an action. The server re-reads the saved document, so the message
 // always comes from real data and only the right person can trigger it.
@@ -84,13 +84,15 @@ export default async function handler(req,res){
       const{r,d}=await get('exceptions');
       if(!d||d.uid!==uid||d.status!=='pending'||!fresh(d.createdAt)||d.pushed||owner)return skip();
       await r.update({pushed:true});to=[sp.ownerId];
-      msg={title:`📝 ${who(sp,uid)} sent a fix request`,body:cut(`${KIND[d.kind||'add']} · “${d.reason}”`),tag:'fixnew-'+id};
+      msg={title:`📝 ${who(sp,uid)} sent a fix request`,body:cut(`${KIND[d.kind||'add']}${d.batchN>1?` · ${d.batchN} days`:''} · “${d.reason||'no reason'}”`),tag:'fixnew-'+id};
     }
     else if(kind==='fixdecision'){
       const{r,d}=await get('exceptions');
       if(!owner||!d||!['approved','denied'].includes(d.status)||!fresh(d.decidedAt)||d.pushedDecision===d.status)return skip();
       await r.update({pushedDecision:d.status});to=[d.uid];
-      msg={title:d.status==='approved'?'✅ Fix approved':'❌ Fix denied',body:cut(`${KIND[d.kind||'add']} · “${d.reason}”`),tag:'fix-'+id};
+      // a batch (one request per day) is decided in one go: say how many days were decided together
+      let n=1;if(d.batch){const q=await sref.collection('exceptions').where('batch','==',d.batch).get();n=q.docs.filter(z=>z.data().status===d.status&&Math.abs((z.data().decidedAt||0)-d.decidedAt)<6e4).length||1}
+      msg={title:d.status==='approved'?'✅ Fix approved':'❌ Fix denied',body:cut(`${KIND[d.kind||'add']}${n>1?` · ${n} days`:''} · “${d.reason||'no reason'}”`),tag:'fix-'+id};
     }
     else return res.status(400).json({error:'unknown kind'});
 

@@ -42,8 +42,11 @@ service cloud.firestore {
       }
       match /exceptions/{e} {
         allow read: if mem(s);
+        // members create 'pending' requests; the host's own requests may be created already 'approved' (setting: host auto-approve)
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid
-          && request.resource.data.status == 'pending'
+          && (request.resource.data.status == 'pending'
+              || (own(s) && request.resource.data.status == 'approved'))
+          && request.resource.data.kind in ['add', 'edit', 'remove', 'in', 'out']
           && request.resource.data.cyc is string && fixOpen(s, request.resource.data.cyc);
         allow update: if own(s);
         allow delete: if own(s) || (request.auth != null && resource.data.uid == request.auth.uid && resource.data.status == 'pending');

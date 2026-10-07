@@ -19,6 +19,27 @@ Push to GitHub → import in Vercel (Vite is auto-detected). Add the four `VITE_
 Open the Vercel URL → browser menu → **Add to Home Screen**. It runs full-screen like a native app.
 
 ## Rules of the app
-- Cycle: 14th of previous month → 13th of current month.
+- Cycle: starts on the day set in Settings → Space (default 14th) and ends the day before the next one.
 - Hours = paired in/out punches + approved fixes (overlaps merged).
-- Bills split by each person's share of total hours; due on the 5th after the cycle ends.
+- Bills split by each person's share of total hours; due on the 5th after the cycle ends (Settings → Bill defaults).
+
+## Fixing hours (Fixes tab)
+Tap a day, then pick one of four options:
+1. **Edit** – change one session's time in / time out for that day.
+2. **Time in + out** – add a full session. A range over several days is split automatically:
+   first day = start → 11:59 PM, middle days = 12:00 AM → 11:59 PM, last day = 12:00 AM → end.
+3. **Time in only** – you forgot to time in. Counts until your next time out.
+4. **Time out only** – you forgot to time out. Ends your open session at that time.
+
+**Every day is its own request.** A multi-day request is saved as one document per day (linked by a `batch` id), so the host can approve, deny
+or undo one day without touching the others, and editing one day later never changes its neighbours. The host also gets *Approve all / Deny all*
+and a *Review day by day* list. Use the **Everyone / person** and **status** chips to filter the request list.
+
+## Settings tab
+One place for everything, grouped: **Space** (name, cycle day, invite code, members, host transfer) · **Fix request rules** · **Bill defaults** ·
+**Notifications & reminders** · **Host tools** (broadcast) · **Export data** (CSV) · **Account**. Members can see the space-level sections; only the host can change them.
+These are stored on the space document under `cfg` (`hostAuto`, `needReason`, `fixBackDays`, `fixMaxDays`, `basePct`, `fixedIds`, `dueDay`).
+
+## After updating
+Publish the new `firestore.rules` (the host's own fixes can now be created already-approved, and request `kind` is validated).
+Old fix requests keep working exactly as before.

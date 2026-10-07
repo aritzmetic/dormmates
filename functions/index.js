@@ -76,14 +76,17 @@ export const onBill=onDocumentWritten(on('spaces/{sid}/bills/{bid}'),async e=>{
 });
 
 // ---------- fix requests ----------
-const KIND={add:'Add time',edit:'Change time',remove:'Remove session'};
+const KIND={add:'Add time',in:'Add time in',out:'Add time out',edit:'Edit session',remove:'Remove session'};
 export const onFixNew=onDocumentCreated(on('spaces/{sid}/exceptions/{xid}'),async e=>{
   const x=e.data.data(),sp=await getSpace(e.params.sid);if(!sp)return;
-  await push(others(sp,x.uid).filter(m=>m===sp.ownerId),{title:`📝 ${who(sp,x.uid)} sent a fix request`,body:cut(`${KIND[x.kind||'add']} · “${x.reason}”`),tag:'fixnew-'+e.params.xid});
+  if(x.batch&&e.params.xid!==x.batch)return; // a multi-day request is saved as one doc per day: notify once (for the first)
+  if(x.status!=='pending')return;
+  await push(others(sp,x.uid).filter(m=>m===sp.ownerId),{title:`📝 ${who(sp,x.uid)} sent a fix request`,body:cut(`${KIND[x.kind||'add']}${x.batchN>1?` · ${x.batchN} days`:''} · “${x.reason||'no reason'}”`),tag:'fixnew-'+e.params.xid});
 });
 export const onFixDecision=onDocumentUpdated(on('spaces/{sid}/exceptions/{xid}'),async e=>{
   const b=e.data.before.data(),a=e.data.after.data();
   if(b.status===a.status||a.status==='pending')return;
+  if(a.batch&&e.params.xid!==a.batch)return; // one notification per batch
   await push([a.uid],{title:a.status==='approved'?'✅ Fix approved':'❌ Fix denied',body:cut(`${KIND[a.kind||'add']} · “${a.reason}”`),tag:'fix-'+e.params.xid});
 });
 

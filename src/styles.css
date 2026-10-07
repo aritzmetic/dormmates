@@ -94,3 +94,22 @@ input[type=time],input[type=datetime-local],input[type=date]{color-scheme:dark}
 .ptiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.ptiles div{background:#f4f1ff;border-radius:12px;padding:10px}.ptiles b{display:block;font:800 15px 'Bricolage Grotesque',sans-serif}.ptiles span{display:block;line-height:1.25;margin-top:3px;font-size:9px;font-weight:700;color:#746c9e;letter-spacing:.04em}
 .pchart{display:flex;align-items:flex-end;gap:2px;height:84px;background:#faf8ff;border-radius:12px;padding:8px 6px 4px;margin-top:6px}
 .pcol{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}.pbar{width:100%;background:#8c91ff;border-radius:3px 3px 1px 1px}.pcol span{font-size:8px;color:#746c9e;height:10px;margin-top:2px}
+
+/* fixes: option tiles + live preview */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:14px;border-radius:18px;background:var(--card2);border:1.5px solid #3d3180;white-space:normal}
+.tile b{font-size:15px}.tile small{font-weight:500;color:var(--mut);font-size:12px;line-height:1.3}
+.pv{background:#120b26;border:1.5px solid #3d3180;border-radius:14px;padding:12px;margin:0 0 12px;font-size:13px}
+.pv.bad{border-color:#ff6b8b88;color:var(--bad)}
+.pv p{margin:0}
+
+/* settings: collapsible groups */
+.acc-wrap{margin:0}
+.card.acc{padding:0;overflow:hidden}
+.acch{display:flex;align-items:center;gap:12px;width:100%;background:none;border-radius:0;padding:16px;text-align:left}
+.acci{font-size:22px;width:34px;height:34px;display:grid;place-items:center;background:var(--card2);border-radius:12px;flex:none}
+.acch b{font-size:16px}.acch .mut{font-weight:500;margin-top:1px}
+.accb{padding:2px 16px 16px;border-top:1px solid #ffffff12}
+.accb h4{margin:18px 0 8px;font:700 13px 'DM Sans';color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+fieldset{border:0;padding:0;margin:0;min-width:0}
+fieldset:disabled input,fieldset:disabled select{opacity:.55}
