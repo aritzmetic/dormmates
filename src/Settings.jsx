@@ -43,8 +43,10 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
    if(window.Notification?.permission!=='granted')return say('Saved, but notifications are blocked on this phone, so you will not be notified. Allow them in your phone settings.',7000);
    let reg=true;try{await enablePush(u.uid)}catch(e){reg=false;say('Saved, but this phone could not register for push: '+e.message,7000)}
    const days=rp.days.length===7?'every day':rp.days.map(d=>DN[d]).join(', '),parts=[rp.inOn&&`time in ${t12(rp.inAt)}`,rp.outOn&&`time out ${t12(rp.outAt)}`,rp.longOn&&`alert after ${rp.longH||10}h timed in`].filter(Boolean);
-   await notify('⏰ Reminders set ✓',`You'll be reminded: ${parts.join(' · ')} (${days}).`);
-   if(reg)say('Reminders set ✓ Check your notifications',5000);
+   const text=`You'll be reminded: ${parts.join(' · ')} (${days}).`;let dev=0;
+   if(reg){try{dev=(await pingWait({sid:sp.id,kind:'remset',id:'r'+Date.now(),text})).devices||0}catch{}}
+   if(!dev)await notify('⏰ Reminders set ✓',text);   // fallback if the server could not reach this phone
+   say('Reminders set ✓ Check your notifications',5000);
   }catch(e){say('Failed: '+e.message,6000)}finally{setBusy(false)}};
  const test=async()=>{if(!(await notify('DormMates test 🔔','If you can read this, notifications work on this device.')))say('Notifications are off or blocked. Tap "Enable notifications" first.',5000)};
  const testServer=async()=>{setBusy(true);try{await enablePush(u.uid);const j=await pingWait({sid:sp.id,kind:'test',id:'t'+Date.now()});

@@ -9,7 +9,6 @@ const steps=owner=>[
  {tab:'home',sel:'[data-tour=punch]',ic:'⏱',t:'Time in / Time out',b:'This big button is how you punch. Tap it, add proof (a picture or your location) and your dormmates are notified. Your hours for the cycle count up above it.'},
  {tab:'home',sel:'[data-tour=board]',ic:'🏆',t:'Cycle leaderboard',b:'See who has logged the most hours this cycle. Use ‹ › at the top to look at earlier cycles.'},
  {tab:'dorm',sel:'[data-tour=dorm]',ic:'👥',t:"Who's home",b:'Live status of every dormmate: in or out, since when, and the proof they sent. Tap a picture to enlarge it.'},
- {tab:'dorm',sel:'[data-tour=chores]',ic:'🧹',t:'Chores',b:'Add a chore and assign it to someone. They get a notification and tick it off when it is done.'},
  {tab:'dorm',sel:'[data-tour=notes]',ic:'📌',t:'Notice board',b:'Post a note for everyone. Everyone else gets a push notification.'},
  {tab:'history',sel:'[data-tour=hist]',ic:'🕘',t:'History',b:'The chart shows the AVERAGE hours per member for each day. Tap a name to see only that person. Tap a bar to see that day.'},
  {tab:'fixes',sel:'[data-tour=fixcal]',ic:'📝',t:'Fixes calendar',b:owner?'Tap a day to fix hours. Pick a member at the top to counter-check their punches, and suggest a correction. They must approve it.':'Forgot to time in or out? Tap a day and send a fix request. The default range is 12:00 AM to 11:59 PM, adjust it as needed.'},

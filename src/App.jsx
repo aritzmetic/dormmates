@@ -23,7 +23,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[CH,setCH]=useState([]),[ct,setCt]=useState(''),[ca,setCa]=useState(''),[thm,setThm_]=useState(getTheme());
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
  const setThm=m=>{setTheme(m);setThm_(m)};
  const PX=withFix(P,X); // punches + approved time-in-only / time-out-only fixes
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
@@ -34,16 +34,15 @@ export default function App(){
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
- useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);setR([]);setBD([]);setCH([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
+ useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);setR([]);setBD([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
   const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(10)),d=>setA(m(d))),onSnapshot(sp.ownerId===u.uid?collection(s,'receipts'):query(collection(s,'receipts'),where('uid','==',u.uid)),d=>setR(m(d)),()=>{}),
-   onSnapshot(query(collection(s,'chores'),orderBy('createdAt','desc'),limit(40)),d=>setCH(m(d)),()=>{}),
    sp.ownerId===u.uid?onSnapshot(collection(s,'billDrafts'),d=>setBD(m(d)),()=>{}):()=>{}];
   return()=>un.forEach(x=>x())},[sp?.id,sp?.ownerId]);
  const open=id=>{setSid(id);setTab('home');setOff(0);setMenu(null)};
 
  useEffect(()=>{if(!u)return;const a=away(u.uid,PX);if(a?.open&&!localStorage.getItem('nf'+a.D)){localStorage.setItem('nf'+a.D,1);const t='Confirm you are still away before 8:00 PM or you will be timed in.';say('⏰ '+t,6000);notify('⏰ Confirm you are away',t)}});
  // guide: shown ONCE to everyone (new and existing) until they confirm; also remembered on this device
- useEffect(()=>{if(u&&sp&&PFL&&!(PF?.tourV>=TOUR_V)&&localStorage.getItem('tourV')!==String(TOUR_V))setTour(true)},[u?.uid,sp?.id,PFL,PF?.tourV]);
+ useEffect(()=>{if(u&&PFL&&!(PF?.tourV>=TOUR_V)&&localStorage.getItem('tourV')!==String(TOUR_V))setTour(true)},[u?.uid,PFL,PF?.tourV]);
  const doneTour=async()=>{localStorage.setItem('tourV',TOUR_V);setTour(false);setTab('home');setOff(0);try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,tourV:TOUR_V,tourAt:Date.now()},{merge:true})}catch{}};
  // reminder fallback: while the app is open, fire the reminder locally too (the server push covers a closed app)
  useEffect(()=>{if(!u||!PF||window.Notification?.permission!=='granted')return;const n=new Date(),mins=n.getHours()*60+n.getMinutes(),day=d2s(Date.now()),inside=norm(u.uid,PX).at(-1)?.type==='in';
@@ -58,7 +57,8 @@ export default function App(){
   <motion.h1 initial={{y:30,opacity:0}} animate={{y:0,opacity:1}} transition={{delay:.2}}>Who's home?<br/>Who owes?</motion.h1>
   <p className="mut">Punch in and out, fix missed days, and split the bills by who was actually there.</p>
   <motion.button whileTap={{scale:.95}} className="pri w" onClick={()=>signInWithPopup(auth,gp).catch(e=>say(e.message))}>Continue with Google</motion.button></div>{toast&&<div className="toast">{toast}</div>}</main>;
- if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMates</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{toast&&<div className="toast">{toast}</div>}</main>;
+ const tourEl=tour&&<Tour owner={sp?.ownerId===u.uid} setTab={t=>{setTab(t);setOff(0)}} onDone={doneTour} onLater={()=>{setTour(false);setTab('home')}}/>;
+ if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMates</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{tourEl}{toast&&<div className="toast">{toast}</div>}</main>;
 
  const me={n:u.displayName||'Me',p:u.photoURL||''},owner=sp.ownerId===u.uid,cd=sp.cycleDay||14,r=cyc(off,cd);
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
@@ -85,8 +85,7 @@ export default function App(){
   if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
   try{await enablePush(u.uid);await notify('DormMates reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
- async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','chores','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
- const addChore=async()=>{const to=ca||u.uid;try{const cr=await addDoc(col('chores'),{title:ct.trim(),assignee:to,done:false,createdBy:u.uid,createdAt:Date.now()});setCt('');buzz();if(to!==u.uid)ping({sid:sp.id,kind:'chore',id:cr.id})}catch(e){say('Failed: '+e.message,5000)}};
+ async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
  const dlR=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
@@ -108,11 +107,6 @@ export default function App(){
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
   {owner&&<Item><p className="mut">⚙️ Cycle day, invite code, members and the host tools (send a message to everyone) are now in the <b style={{color:'var(--ink)'}}>Settings</b> tab.</p></Item>}
   {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p>{owner&&<button className="sm" onClick={()=>delItem('announcements',a.id)}>✕</button>}</div>)}</Item>}
-  <Item data-tour="chores"><h3>🧹 Chores</h3>
-   {CH.map(c=><div key={c.id} className={`chore ${c.done?'done':''}`}><input type="checkbox" checked={!!c.done} disabled={!(owner||c.assignee===u.uid)} onChange={()=>updateDoc(doc(db,'spaces',sp.id,'chores',c.id),{done:!c.done,doneAt:c.done?deleteField():Date.now()}).catch(e=>say(e.message,4000))}/><div style={{flex:1,minWidth:0}}><b>{c.title}</b><div className="mut">{nm(c.assignee)||'Someone'}{c.done&&c.doneAt?` · done ${fmt(c.doneAt)}`:''}</div></div>{(owner||c.createdBy===u.uid)&&<button className="sm" onClick={()=>delItem('chores',c.id)}>✕</button>}</div>)}
-   {!CH.length&&<p className="mut" style={{marginBottom:8}}>No chores yet.</p>}
-   <input placeholder="e.g. Take out the trash" value={ct} maxLength={60} onChange={e=>setCt(e.target.value)}/>
-   <div className="row"><select style={{margin:0,flex:1}} value={ca||u.uid} onChange={e=>setCa(e.target.value)}>{members.map(m=><option key={m.id} value={m.id}>{m.id===u.uid?'Me':m.n}</option>)}</select><button className="pri" disabled={!ct.trim()} onClick={addChore}>Add</button></div></Item>
   <Item data-tour="notes"><h3>Notice board</h3><div className="row"><input style={{margin:0}} placeholder="Post a note for everyone…" value={nt} onChange={e=>setNt(e.target.value)}/><button className="pri sm" onClick={post}>Post</button></div>
    {N.map(n=><div key={n.id} className="note"><b>{nm(n.uid)}</b> <span className="mut">{fmt(n.createdAt)}</span><p>{n.text}</p>{(owner||n.uid===u.uid)&&<button className="sm" onClick={()=>delItem('notes',n.id)}>✕</button>}</div>)}{!N.length&&<p className="mut" style={{marginTop:10}}>No notes yet.</p>}</Item></List>;
 
@@ -207,7 +201,7 @@ export default function App(){
     <SpaceForm u={u} open={open} say={say}/></>}
   </Sheet>}</AnimatePresence>
   <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
-  {tour&&<Tour owner={owner} setTab={t=>{setTab(t);setOff(0)}} onDone={doneTour} onLater={()=>{setTour(false);setTab('home')}}/>}
+  {tourEl}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>
   <nav>{T.map(([k,i,n])=><button key={k} className={tab===k?'on':''} onClick={()=>{setTab(k);setOff(0);buzz()}}>{tab===k&&<motion.div layoutId="pill" className="pill" transition={{type:'spring',stiffness:420,damping:34}}/>}<span>{i}</span>{n}{k==='fixes'&&pend>0&&<em>{pend}</em>}</button>)}</nav></>}
