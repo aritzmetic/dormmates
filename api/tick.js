@@ -14,8 +14,8 @@ export default async function handler(req,res){
   const key=req.query.key||(req.headers.authorization||'').replace(/^Bearer /,'');
   if(!process.env.CRON_SECRET||key!==process.env.CRON_SECRET)return res.status(401).json({error:'unauthorized'});
   try{
-    const now=new Date(),nowMins=now.getHours()*60+now.getMinutes(),mins=nowMins;
-    const out={custom:0,due:0,fix:0,long:0};
+    const now=new Date(),mins=now.getHours()*60+now.getMinutes(),today=ymd(now),dbg=req.query.debug==='1',trace=[];
+    const out={custom:0,due:0,fix:0,long:0,noDevice:0};
     await db.doc('meta/tick').set({at:Date.now()});   // heartbeat: Settings shows whether this timer is running
     const spaces=await db.collection('spaces').get();
     const byUser=new Map();
@@ -34,18 +34,21 @@ export default async function handler(req,res){
       if(Array.isArray(p.days)&&!p.days.includes(dow))continue;
       // long-session alert: still timed in after N hours (once per session)
       if(p.longOn){const l=await lastIn(uid),h=+p.longH||10;
-        if(l?.type==='in'&&Date.now()-l.ts>=h*36e5&&p.last?.longTs!==l.ts){await push([uid],{title:'⏱ Still timed in?',body:`You've been timed in for ${h}+ hours. Forgot to time out? Open DormMates.`,tag:'rem-long'});await d.ref.set({last:{longTs:l.ts}},{merge:true});out.long++}}
-      const hit=(on,at,k)=>{const t=toMin(at);return !!on&&t!=null&&umins-t>=0&&umins-t<15&&p.last?.[k]!==today};
-      const wIn=hit(p.inOn,p.inAt,'in'),wOut=hit(p.outOn,p.outAt,'out');
-      if(!wIn&&!wOut)continue;
-      const inside=await isIn(uid),last={};
-      if(wIn){last.in=today;if(!inside){await push([uid],{title:'🟢 Time to time in',body:"You're not timed in yet. Open DormMates to punch in.",tag:'rem-in'});out.custom++}}
-      if(wOut){last.out=today;if(inside){await push([uid],{title:'🔴 Time to time out',body:"You're still timed in. Open DormMates to punch out.",tag:'rem-out'});out.custom++}}
-      await d.ref.set({last},{merge:true});
+        if(l?.type==='in'&&Date.now()-l.ts>=h*36e5&&p.last?.longTs!==l.ts){await push([uid],{title:'⏱ Still timed in?',body:`You've been timed in for ${h}+ hours. Forgot to time out? Open DormMate.`,tag:'rem-long'});await d.ref.set({last:{longTs:l.ts}},{merge:true});out.long++}}
+      // a reminder is DUE from its set time until 15 min later (so one late run of the timer never loses it) and is sent once a day
+      const state=(on,at,k)=>{const t=toMin(at);if(!on)return 'off';if(t==null)return 'bad-time';const diff=umins-t;if(diff<0)return 'not-yet ('+(-diff)+' min to go)';if(diff>=15)return 'missed-window ('+diff+' min late)';if(p.last?.[k]===today)return 'already-sent-today';return 'DUE'};
+      const sIn=state(p.inOn,p.inAt,'in'),sOut=state(p.outOn,p.outAt,'out');
+      if(dbg)trace.push({user:uid.slice(0,6),phoneClock:`${String(Math.floor(umins/60)).padStart(2,'0')}:${String(umins%60).padStart(2,'0')}`,timeIn:sIn,timeOut:sOut});
+      const fire=[sIn==='DUE'&&['in','🟢 Time to time in','Your time-in reminder. Open DormMate to punch in.','rem-in'],sOut==='DUE'&&['out','🔴 Time to time out','Your time-out reminder. Open DormMate to punch out.','rem-out']].filter(Boolean);
+      for(const[k,title,body,tag]of fire){
+        await d.ref.set({last:{[k]:today}},{merge:true});            // claim first, so two timers can never double-send
+        const n=await push([uid],{title,body,tag});out.custom++;if(!n)out.noDevice++;
+        await d.ref.set({lastSent:{kind:k,at:Date.now(),devices:n}},{merge:true});
+      }
     }
 
     // 2) daily 9:00 AM: bill due + fix deadline reminders
-    if(mins>=540&&mins<550){
+    if(mins>=540&&mins<560){
       for(const s of spaces.docs){
         const sp=s.data(),bills=await s.ref.collection('bills').get();
         for(const bd of bills.docs){
@@ -70,6 +73,6 @@ export default async function handler(req,res){
         }
       }
     }
-    res.json({ok:true,...out});
+    res.json({ok:true,...out,...(dbg?{serverClock:now.toString(),users:trace}:{})});
   }catch(e){console.error('tick error',e);res.status(500).json({error:e.message})}
 }

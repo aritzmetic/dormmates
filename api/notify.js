@@ -44,7 +44,7 @@ export default async function handler(req,res){
       msg={title:`📣 ${sp.name}`,body:cut(d.text),tag:'ann-'+id};
     }
     else if(kind==='test'){
-      to=[uid];msg={title:'✅ Server push works',body:'DormMates can notify this phone, even when the app is closed.',tag:'test'};
+      to=[uid];msg={title:'✅ Server push works',body:'DormMate can notify this phone, even when the app is closed.',tag:'test'};
     }
     else if(kind==='bills'){
       // only fires when the host taps "Send to dormmates" (sentAt is stamped then), never for a private draft
