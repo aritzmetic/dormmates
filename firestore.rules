@@ -81,14 +81,6 @@ service cloud.firestore {
       match /billDrafts/{b} {
         allow read, write: if own(s);
       }
-      // chores: anyone in the space adds; the host or the assignee ticks them off
-      match /chores/{c} {
-        allow read: if mem(s);
-        allow create: if mem(s) && request.resource.data.createdBy == request.auth.uid;
-        allow update: if own(s) || (mem(s) && resource.data.assignee == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['done', 'doneAt']));
-        allow delete: if own(s) || (mem(s) && resource.data.createdBy == request.auth.uid);
-      }
       match /notes/{n} {
         allow read: if mem(s);
         allow create: if mem(s) && request.resource.data.uid == request.auth.uid;
