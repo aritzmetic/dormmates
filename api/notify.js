@@ -84,11 +84,10 @@ export default async function handler(req,res){
       to=(sp.members||[]).filter(m=>m!==uid&&!d.paid?.[m]);
       msg={title:'💡 Friendly bill reminder',body:`${sp.name}: you still have an unpaid bill${d.due?` (pay by ${dd(d.due)})`:''}. Open the app to see your share.`,tag:'nudge-'+id};
     }
-    else if(kind==='chore'){
-      const{r,d}=await get('chores');
-      if(!d||d.createdBy!==uid||!fresh(d.createdAt)||d.pushed||!d.assignee||d.assignee===uid)return skip();
-      await r.update({pushed:true});to=[d.assignee];
-      msg={title:`🧹 ${who(sp,uid)} gave you a chore`,body:cut(d.title),tag:'chore-'+id};
+    else if(kind==='remset'){
+      // confirmation that the person's reminders were saved; goes through the same push path as every other notification
+      const t=String(req.body?.text||'').slice(0,160);
+      to=[uid];msg={title:'⏰ Reminders set ✓',body:t||'Your reminders are saved.',tag:'remset'};
     }
     else if(kind==='suggest'){
       const{r,d}=await get('exceptions');
