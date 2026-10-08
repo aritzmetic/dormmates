@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {signOut} from 'firebase/auth';
 import {doc,collection,setDoc,updateDoc,addDoc,arrayRemove,deleteField,onSnapshot} from 'firebase/firestore';
 import {enablePush} from './push';
@@ -25,7 +25,12 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,replayTour}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
- useEffect(()=>{setRp({...DFLT,...(PF||{})})},[JSON.stringify(PF)]);
+ const dirty=useRef(null),[saved,setSaved]=useState(false);
+ useEffect(()=>{if(!dirty.current)setRp({...DFLT,...(PF||{})})},[JSON.stringify(PF)]);
+ // reminders are saved to your account the moment you change them, so they keep working after you close the app
+ const rpDoc=n=>({uid:u.uid,inOn:!!n.inOn,inAt:n.inAt,outOn:!!n.outOn,outAt:n.outAt,days:n.days,longOn:!!n.longOn,longH:+n.longH||10,tz:new Date().getTimezoneOffset(),updatedAt:Date.now()});
+ const chg=patch=>{const n={...rp,...patch};setRp(n);setSaved(false);clearTimeout(dirty.current);
+  dirty.current=setTimeout(async()=>{try{await setDoc(doc(db,'prefs',u.uid),rpDoc(n),{merge:true});setSaved(true)}catch(e){say('Could not save reminders: '+e.message,5000)}finally{dirty.current=null}},500)};
  const perm=window.Notification?.permission,nRem=(rp.inOn?1:0)+(rp.outOn?1:0),pct=cfg.basePct??25,due=cfg.dueDay||5,back=cfg.fixBackDays?`${cfg.fixBackDays} days back`:'no limit on how far back';
  const hostOnly=!owner&&<p className="mut" style={{marginBottom:10}}>🔒 Only the host ({nm(sp.ownerId)}) can change these.</p>;
  const upd=async(patch,msg)=>{try{await updateDoc(sref,patch);buzz();say(msg||'Saved ✓')}catch(e){say('Failed: '+e.message,5000)}};
@@ -36,7 +41,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
   if(on&&!rp.days.length)return say('Pick at least one day to repeat on.',4000);
   setBusy(true);
   try{
-   await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,inOn:!!rp.inOn,inAt:rp.inAt,outOn:!!rp.outOn,outAt:rp.outAt,days:rp.days,longOn:!!rp.longOn,longH:+rp.longH||10,tz:new Date().getTimezoneOffset(),updatedAt:Date.now()},{merge:true});buzz();
+   clearTimeout(dirty.current);dirty.current=null;await setDoc(doc(db,'prefs',u.uid),rpDoc(rp),{merge:true});setSaved(true);buzz();
    if(!on)return say('Reminders turned off ✓');
    // make sure THIS phone can actually receive them: ask permission + register the push token now
    if(window.Notification?.permission!=='granted')await askNotif();
@@ -48,7 +53,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
    if(!dev)await notify('⏰ Reminders set ✓',text);   // fallback if the server could not reach this phone
    say('Reminders set ✓ Check your notifications',5000);
   }catch(e){say('Failed: '+e.message,6000)}finally{setBusy(false)}};
- const test=async()=>{if(!(await notify('DormMates test 🔔','If you can read this, notifications work on this device.')))say('Notifications are off or blocked. Tap "Enable notifications" first.',5000)};
+ const test=async()=>{if(!(await notify('DormMate test 🔔','If you can read this, notifications work on this device.')))say('Notifications are off or blocked. Tap "Enable notifications" first.',5000)};
  const testServer=async()=>{setBusy(true);try{await enablePush(u.uid);const j=await pingWait({sid:sp.id,kind:'test',id:'t'+Date.now()});
    say(j.devices>0?`Server push sent to ${j.devices} device${j.devices>1?'s':''} ✓ You should see it in a few seconds.`:'The server has no registered device for you. Tap Enable notifications, then try again.',7000)}
   catch(e){say('Server test failed: '+e.message,7000)}finally{setBusy(false)}};
@@ -58,7 +63,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
  const saveSpace=ev=>{ev.preventDefault();const g=new FormData(ev.target),n=String(g.get('n')).trim();if(!n)return say('The space needs a name.');
   upd({name:n,cycleDay:+g.get('c')},'Space saved ✓').then(()=>setOff(0))};
  const newCode=()=>confirm('Make a new invite code? The old code will stop working.')&&upd({code:Math.random().toString(36).slice(2,8).toUpperCase()},'New invite code ✓');
- const share=()=>navigator.share?navigator.share({title:'Join my DormMates space',text:`Join "${sp.name}" on DormMates with code ${sp.code}`}).catch(()=>{}):navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'));
+ const share=()=>navigator.share?navigator.share({title:'Join my DormMate space',text:`Join "${sp.name}" on DormMate with code ${sp.code}`}).catch(()=>{}):navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'));
  const makeHost=m=>confirm(`Make ${m.n} the host? You will lose host controls.`)&&upd({ownerId:m.id},`${m.n} is now the host`);
  const kick=m=>confirm(`Remove ${m.n} from this space?`)&&upd({members:arrayRemove(m.id),['names.'+m.id]:deleteField()},`${m.n} removed`);
 
@@ -137,11 +142,13 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      :<><Row><span>✅ Notifications are on</span><button className="sm" onClick={test}>Send a test</button></Row><button className="w" style={{marginBottom:10}} disabled={busy} onClick={testServer}>📡 Test a push from the server</button></>}
     {hb!==undefined&&(stale?<div className="warn">⚠️ The reminder timer is not running{hb?` (last ran ${ago} min ago)`:''}. Reminders will only reach you while the app is open until the host sets up the 5-minute timer (see README → Reminders).</div>:<p className="mut" style={{marginBottom:10}}>✅ Reminder timer last ran {ago<1?'just now':ago+' min ago'}.</p>)}
     <p className="mut" style={{marginBottom:6}}>Get a push at the times you choose. A time-in reminder is skipped if you're already in, and a time-out reminder is skipped if you're already out.</p>
-    <label className="chk"><input type="checkbox" checked={!!rp.inOn} onChange={e=>setRp({...rp,inOn:e.target.checked})}/>Remind me to time in</label>{rp.inOn&&<input type="time" value={rp.inAt} onChange={e=>setRp({...rp,inAt:e.target.value})}/>}
-    <label className="chk"><input type="checkbox" checked={!!rp.outOn} onChange={e=>setRp({...rp,outOn:e.target.checked})}/>Remind me to time out</label>{rp.outOn&&<input type="time" value={rp.outAt} onChange={e=>setRp({...rp,outAt:e.target.value})}/>}
-    <label className="chk"><input type="checkbox" checked={!!rp.longOn} onChange={e=>setRp({...rp,longOn:e.target.checked})}/>Alert me if I stay timed in too long</label>{rp.longOn&&<><label>After how many hours?</label><select value={rp.longH} onChange={e=>setRp({...rp,longH:+e.target.value})}>{[4,6,8,10,12,16,24].map(h=><option key={h} value={h}>{h} hours</option>)}</select></>}
-    <label>Repeat on</label><div className="fchips">{['Su','Mo','Tu','We','Th','Fr','Sa'].map((d,i)=><button key={i} className={`fchip ${rp.days.includes(i)?'on':''}`} onClick={()=>setRp({...rp,days:rp.days.includes(i)?rp.days.filter(x=>x!==i):[...rp.days,i].sort()})}>{d}</button>)}</div>
-    <button className="pri w" disabled={busy} onClick={savePf}>{busy?'Saving…':'Save reminders'}</button>
+    <label className="chk"><input type="checkbox" checked={!!rp.inOn} onChange={e=>chg({inOn:e.target.checked})}/>Remind me to time in</label>{rp.inOn&&<input type="time" value={rp.inAt} onChange={e=>chg({inAt:e.target.value})}/>}
+    <label className="chk"><input type="checkbox" checked={!!rp.outOn} onChange={e=>chg({outOn:e.target.checked})}/>Remind me to time out</label>{rp.outOn&&<input type="time" value={rp.outAt} onChange={e=>chg({outAt:e.target.value})}/>}
+    <label className="chk"><input type="checkbox" checked={!!rp.longOn} onChange={e=>chg({longOn:e.target.checked})}/>Alert me if I stay timed in too long</label>{rp.longOn&&<><label>After how many hours?</label><select value={rp.longH} onChange={e=>chg({longH:+e.target.value})}>{[4,6,8,10,12,16,24].map(h=><option key={h} value={h}>{h} hours</option>)}</select></>}
+    <label>Repeat on</label><div className="fchips">{['Su','Mo','Tu','We','Th','Fr','Sa'].map((d,i)=><button key={i} className={`fchip ${rp.days.includes(i)?'on':''}`} onClick={()=>chg({days:rp.days.includes(i)?rp.days.filter(x=>x!==i):[...rp.days,i].sort()})}>{d}</button>)}</div>
+    <p className="mut" style={{margin:'4px 0 10px'}}>{saved?'✓ Saved to your account. Reminders keep working after you close the app.':'Changes save automatically to your account.'}</p>
+    {PF?.lastSent&&<p className="mut" style={{marginBottom:10}}>{PF.lastSent.devices>0?'📨 Last reminder sent by the server: ':'⚠️ The server tried to send a reminder but could not reach this phone ('}{new Date(PF.lastSent.at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}{PF.lastSent.devices>0?'':'). Tap Enable notifications, then Test a push from the server.'}</p>}
+    <button className="pri w" disabled={busy} onClick={savePf}>{busy?'Saving…':'Send me a confirmation'}</button>
     <p className="mut" style={{marginTop:10}}>The “confirm you are away” alert at 7:30 PM is automatic and cannot be turned off.</p>
    </Acc></Item>
 

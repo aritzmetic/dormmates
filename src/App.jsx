@@ -11,10 +11,20 @@ import Settings from './Settings';
 import Tour,{TOUR_V} from './Tour';
 import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
-import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr} from './lib';
+import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel} from './lib';
+
+// shown to the host right after a space is created: they must choose when the billing cycle starts
+function CycleSetup({sp,say}){const[day,setDay]=useState(14),[busy,setBusy]=useState(false);
+ const save=async()=>{setBusy(true);try{await updateDoc(doc(db,'spaces',sp.id),{cycleDay:+day,cycleSet:true});say('Cycle saved ✓')}catch(e){say('Failed: '+e.message,5000);setBusy(false)}};
+ return <div className="scrim" style={{zIndex:55,alignItems:'center',padding:16}}><motion.div className="card" style={{width:'100%',maxWidth:420,margin:0}} initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}}>
+  <div style={{fontSize:34}}>🗓️</div><h3 style={{fontSize:22,margin:'4px 0 6px'}}>When does your billing cycle start?</h3>
+  <p className="mut" style={{marginBottom:12}}>Hours, fixes and bills for <b>{sp.name}</b> are counted from this day of the month until the day before the next one. Most dorms use the day the bill period begins. You can change it later in Settings → Space.</p>
+  <label>Cycle starts on day</label><select value={day} onChange={e=>setDay(e.target.value)}>{[...Array(28)].map((_,i)=><option key={i} value={i+1}>{i+1}</option>)}</select>
+  <p className="mut" style={{margin:'0 0 14px'}}>Current cycle: <b style={{color:'var(--ink)'}}>{cycLabel(cyc(0,+day))}</b></p>
+  <button className="pri w" disabled={busy} onClick={save}>{busy?'Saving…':'Save cycle'}</button></motion.div></div>}
 
 function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState(''),me={n:u.displayName||'Me',p:u.photoURL||''};
- const create=async()=>{if(!n.trim())return;const r=await addDoc(collection(db,'spaces'),{name:n.trim(),code:Math.random().toString(36).slice(2,8).toUpperCase(),ownerId:u.uid,members:[u.uid],names:{[u.uid]:me}});setN('');open(r.id)};
+ const create=async()=>{if(!n.trim())return;const r=await addDoc(collection(db,'spaces'),{name:n.trim(),code:Math.random().toString(36).slice(2,8).toUpperCase(),ownerId:u.uid,members:[u.uid],names:{[u.uid]:me},cycleDay:14,cycleSet:false});setN('');open(r.id)};
  const join=async()=>{const q=await getDocs(query(collection(db,'spaces'),where('code','==',c.trim().toUpperCase()),limit(1)));if(q.empty)return say('No space with that code.');
   await updateDoc(q.docs[0].ref,{members:arrayUnion(u.uid),['names.'+u.uid]:me});setC('');open(q.docs[0].id)};
  return <><div className="card"><h3>Start a new space</h3><input placeholder="e.g. Room 304" value={n} onChange={e=>setN(e.target.value)}/><button className="pri w" onClick={create}>Create space</button></div>
@@ -30,7 +40,7 @@ export default function App(){
  useEffect(()=>{const t=setInterval(()=>tick(n=>n+1),1000);return()=>clearInterval(t)},[]);
  useEffect(()=>onAuthStateChanged(auth,user=>{setU(user);setReady(true)}),[]);
  useEffect(()=>{if(u&&window.Notification?.permission==='granted')enablePush(u.uid).catch(()=>{})},[u?.uid]);
- useEffect(()=>{if(!u)return;return setPFL(false);return onSnapshot(doc(db,'prefs',u.uid),d=>{setPF(d.exists()?d.data():null);setPFL(true)},()=>setPFL(true))},[u?.uid]);
+ useEffect(()=>{if(!u)return;setPFL(false);return onSnapshot(doc(db,'prefs',u.uid),d=>{setPF(d.exists()?d.data():null);setPFL(true)},()=>setPFL(true))},[u?.uid]);
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
@@ -47,18 +57,18 @@ export default function App(){
  // reminder fallback: while the app is open, fire the reminder locally too (the server push covers a closed app)
  useEffect(()=>{if(!u||!PF||window.Notification?.permission!=='granted')return;const n=new Date(),mins=n.getHours()*60+n.getMinutes(),day=d2s(Date.now()),inside=norm(u.uid,PX).at(-1)?.type==='in';
   if(Array.isArray(PF.days)&&!PF.days.includes(n.getDay()))return;
-  [['in',PF.inOn,PF.inAt,!inside,'🟢 Time to time in',"You're not timed in yet. Open DormMates to punch in."],['out',PF.outOn,PF.outAt,inside,'🔴 Time to time out',"You're still timed in. Open DormMates to punch out."]].forEach(([k,on_,at,need,t,b])=>{
+  [['in',PF.inOn,PF.inAt,true,'🟢 Time to time in',"You're not timed in yet. Open DormMate to punch in."],['out',PF.outOn,PF.outAt,true,'🔴 Time to time out',"You're still timed in. Open DormMate to punch out."]].forEach(([k,on_,at,need,t,b])=>{
    const[h,m]=String(at||'').split(':').map(Number),d=mins-(h*60+m);if(!on_||!Number.isFinite(d)||d<0||d>=10||localStorage.getItem('rl-'+k)===day)return;
    localStorage.setItem('rl-'+k,day);if(need)notify(t,b)})});
  const orbs=<><div className="orb o1"/><div className="orb o2"/></>;
  if(!ready||(u&&!loaded))return <div className="login"><motion.div animate={{rotate:360}} transition={{repeat:Infinity,duration:1.4,ease:'linear'}} className="logo" style={{margin:'auto'}}><i/></motion.div></div>;
  if(!u)return <main>{orbs}<div className="login">
-  <motion.div className="logo" initial={{scale:.4,rotate:-30,opacity:0}} animate={{scale:1,rotate:0,opacity:1}} transition={{type:'spring',stiffness:200}}><i/>DormMates</motion.div>
+  <motion.div className="logo" initial={{scale:.4,rotate:-30,opacity:0}} animate={{scale:1,rotate:0,opacity:1}} transition={{type:'spring',stiffness:200}}><i/>DormMate</motion.div>
   <motion.h1 initial={{y:30,opacity:0}} animate={{y:0,opacity:1}} transition={{delay:.2}}>Who's home?<br/>Who owes?</motion.h1>
   <p className="mut">Punch in and out, fix missed days, and split the bills by who was actually there.</p>
   <motion.button whileTap={{scale:.95}} className="pri w" onClick={()=>signInWithPopup(auth,gp).catch(e=>say(e.message))}>Continue with Google</motion.button></div>{toast&&<div className="toast">{toast}</div>}</main>;
  const tourEl=tour&&<Tour owner={sp?.ownerId===u.uid} setTab={t=>{setTab(t);setOff(0)}} onDone={doneTour} onLater={()=>{setTour(false);setTab('home')}}/>;
- if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMates</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{tourEl}{toast&&<div className="toast">{toast}</div>}</main>;
+ if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMate</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{tourEl}{toast&&<div className="toast">{toast}</div>}</main>;
 
  const me={n:u.displayName||'Me',p:u.photoURL||''},owner=sp.ownerId===u.uid,cd=sp.cycleDay||14,r=cyc(off,cd);
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
@@ -83,7 +93,7 @@ export default function App(){
  const askNotif=async()=>{
   if(!window.Notification||!('serviceWorker' in navigator))return say('Not supported here. On iPhone, add the app to your Home Screen first, then open it from the icon.',6000);
   if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
-  try{await enablePush(u.uid);await notify('DormMates reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
+  try{await enablePush(u.uid);await notify('DormMate reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
  async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
@@ -125,7 +135,7 @@ export default function App(){
   const dc=sp.cfg||{},cfg=b.final?(b.finalCfg||{pct:b.pct??25,fixed:b.fixed||[]}):{pct:b.pct??dc.basePct??25,fixed:b.fixed??dc.fixedIds??[]},fx=cfg.fixed.filter(id=>members.some(m=>m.id===id)),nf=fx.length;
   const hm=members.map(m=>({...m,h:b.final?.[m.id]??hrs(m.id,PX,X,rg)})),T=hm.reduce((t,m)=>t+m.h,0),ids=hm.map(m=>m.id),hh=hm.map(m=>m.h);
   const E=shares(b.elec||0,ids,hh,fx,cfg.pct),W=shares(b.water||0,ids,hh,fx,cfg.pct),tot=(b.elec||0)+(b.water||0),bref=doc(db,'spaces',sp.id,'bills',key),dref=doc(db,'spaces',sp.id,'billDrafts',key);
-  const dueTs=b.due??+new Date(new Date(pe).getFullYear(),new Date(pe).getMonth()+1,dc.dueDay||5),dueEnd=+dayAt(dueTs,1),overdue=Date.now()>=dueEnd,left=Math.max(0,Math.ceil((dueEnd-Date.now())/864e5));
+  const dueTs=b.due??+new Date(new Date(pe).getFullYear(),new Date(pe).getMonth()+1,dc.dueDay||5),left=daysLeft(dueTs),overdue=left<0;
   const pool=E.rest+W.rest,rate=T>0?pool/T:0,RC=R.filter(x=>x.cyc===key),myRc=RC.find(x=>x.uid===u.uid);
   const npend=X.filter(x=>x.status==='pending'&&(([a,z])=>a<rg[1]&&z>=rg[0])(xr(x))).length,live=!b.final&&members.some(m=>last(m.id)?.type==='in');
   const submit=async ev=>{ev.preventDefault();const g=new FormData(ev.target),pv=g.get('p'),nd=g.get('d')?s2d(g.get('d')):null;
@@ -146,7 +156,7 @@ export default function App(){
   const dl=dlR,view=(list,i=0)=>setRv({list,i});
   const nudge=()=>{ping({sid:sp.id,kind:'remindunpaid',id:key});say('Reminder sent to unpaid members 🔔')};
   return <List><Cycle off={off} set={setOff} d={cd}/>
-   <Item className="card hero" data-tour="bills"><span className="mut">Pay by {dayAt(dueTs,0).toLocaleDateString([],{month:'long',day:'numeric'})}{!b.due&&owner?' · default, change it in Settings':''}</span><div className="big">{overdue?'Overdue':<><Num v={left} d={0}/><small> day{left===1?'':'s'} left</small></>}</div>
+   <Item className="card hero" data-tour="bills"><span className="mut">Pay by {dayAt(dueTs,0).toLocaleDateString([],{month:'long',day:'numeric'})}{!b.due&&owner?' · default, change it in Settings':''}</span><div className="big">{overdue?<>Overdue<small> {-left} day{left===-1?'':'s'}</small></>:left===0?'Due today':<><Num v={left} d={0}/><small> day{left===1?'':'s'} left</small></>}</div>
     <p className="mut">{days} days · {d2s(ps)} to {d2s(pe)}{tot?` · ${peso(tot/days)} per day`:''}{b.final?' · 🔒 finalized':''}</p></Item>
    {npend>0&&!b.final&&<div className="warn">{npend} fix request{npend>1?'s':''} still pending in this period. Totals will change once approved.</div>}
    {live&&tot>0&&<div className="warn">Someone is still timed in, so their hours keep counting until they time out. Finalize after everyone is out.</div>}
@@ -202,6 +212,7 @@ export default function App(){
   </Sheet>}</AnimatePresence>
   <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
   {tourEl}
+  {owner&&sp.cycleSet===false&&!tour&&<CycleSetup sp={sp} say={say}/>}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>
   <nav>{T.map(([k,i,n])=><button key={k} className={tab===k?'on':''} onClick={()=>{setTab(k);setOff(0);buzz()}}>{tab===k&&<motion.div layoutId="pill" className="pill" transition={{type:'spring',stiffness:420,damping:34}}/>}<span>{i}</span>{n}{k==='fixes'&&pend>0&&<em>{pend}</em>}</button>)}</nav></>}

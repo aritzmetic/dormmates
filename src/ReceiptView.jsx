@@ -23,7 +23,7 @@ export default function ReceiptView({list,i,setI,paid,onClose,onDownload}){
    <button className="pri sm" onClick={()=>onDownload([r])}>⬇ Download PDF</button>
   </div>
   <div className="rvbody"><div className="paper">
-   <div className="ph"><div className="row sp"><div className="row" style={{gap:10}}><span className="pmark"/><div><b className="pname">DormMates</b><div className="psub">Who's home? Who owes?</div></div></div>
+   <div className="ph"><div className="row sp"><div className="row" style={{gap:10}}><span className="pmark"/><div><b className="pname">DormMate</b><div className="psub">Who's home? Who owes?</div></div></div>
     <div style={{textAlign:'right'}}><b style={{color:'var(--lamp)',fontSize:12}}>BILLING RECEIPT</b><div className="psub">No. {String(r.cyc).slice(-6)}-{String(r.uid).slice(0,4).toUpperCase()}</div><div className="psub">Issued {dt(r.issuedAt)}</div></div></div></div>
    <div className="pb">
     <div className="row sp" style={{alignItems:'flex-start'}}>

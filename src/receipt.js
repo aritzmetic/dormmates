@@ -14,7 +14,7 @@ function page(doc,r,i,n){
  doc.setGState(new doc.GState({opacity:.45}));fill([91,63,214]);doc.circle(196,6,30,'F');
   doc.setGState(new doc.GState({opacity:1}));
  box(L,10,12,12,C.lamp,3.2);box(L,19,3.6,3,C.lamp);                    // logo mark
- T('DormMates',L+16,18.5,{size:21,bold:true,color:C.white});
+ T('DormMate',L+16,18.5,{size:21,bold:true,color:C.white});
  T("Who's home? Who owes?",L+16,24.5,{size:8,color:[157,147,201]});
  T('BILLING RECEIPT',R,15,{size:10,bold:true,color:C.lamp,align:'right'});
  T('No. '+String(r.cyc).slice(-6)+'-'+String(r.uid).slice(0,4).toUpperCase(),R,21,{size:8,color:[200,193,235],align:'right'});
@@ -77,13 +77,13 @@ function page(doc,r,i,n){
  doc.setDrawColor(...C.line);doc.line(L,281,R,281);
  T("Cents are rounded so all tenants' shares add up exactly to the bills. Approved time fixes are included. Amounts in PHP.",L,286,{size:7.3,color:C.mut});
  T(`Confidential: visible only to ${r.name} and the host (${r.host}).`,L,290.5,{size:7.3,color:C.mut});
- T('DormMates',R,286,{size:8,bold:true,color:C.ink,align:'right'});T(`Page ${i+1} of ${n}`,R,290.5,{size:7.3,color:C.mut,align:'right'});
+ T('DormMate',R,286,{size:8,bold:true,color:C.ink,align:'right'});T(`Page ${i+1} of ${n}`,R,290.5,{size:7.3,color:C.mut,align:'right'});
 }
 
 export async function buildDoc(list){
  const {jsPDF}=await import('jspdf'),doc=new jsPDF({unit:'mm',format:'a4'});
  list.forEach((r,i)=>{if(i)doc.addPage();page(doc,{nAll:list.length,...r},i,list.length)});
- doc.setProperties({title:`DormMates receipt - ${list[0].space}`,author:'DormMates'});
+ doc.setProperties({title:`DormMate receipt - ${list[0].space}`,author:'DormMate'});
  return doc;
 }
 

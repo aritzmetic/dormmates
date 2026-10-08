@@ -5,7 +5,7 @@ import {motion} from 'framer-motion';
 export const TOUR_V=1;
 
 const steps=owner=>[
- {tab:'home',ic:'👋',t:'Welcome to DormMates',b:'A quick tour of every page. Tap Next to move on, or Skip to jump to the end. It only takes about a minute.'},
+ {tab:'home',ic:'👋',t:'Welcome to DormMate',b:'A quick tour of every page. Tap Next to move on, or Skip to jump to the end. It only takes about a minute.'},
  {tab:'home',sel:'[data-tour=punch]',ic:'⏱',t:'Time in / Time out',b:'This big button is how you punch. Tap it, add proof (a picture or your location) and your dormmates are notified. Your hours for the cycle count up above it.'},
  {tab:'home',sel:'[data-tour=board]',ic:'🏆',t:'Cycle leaderboard',b:'See who has logged the most hours this cycle. Use ‹ › at the top to look at earlier cycles.'},
  {tab:'dorm',sel:'[data-tour=dorm]',ic:'👥',t:"Who's home",b:'Live status of every dormmate: in or out, since when, and the proof they sent. Tap a picture to enlarge it.'},
@@ -36,7 +36,7 @@ export default function Tour({owner,setTab,onDone,onLater}){
    <div className="tour-dots">{S.map((_,k)=><i key={k} className={k<=i?'on':''}/>)}</div>
    <div className="tour-ic">{st.ic}</div><h3>{st.t}</h3><p className="mut" style={{fontSize:14,marginBottom:14}}>{st.b}</p>
    {last?<>
-    <label className="chk" style={{padding:'4px 0 12px'}}><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/>I understand how to use DormMates.</label>
+    <label className="chk" style={{padding:'4px 0 12px'}}><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/>I understand how to use DormMate.</label>
     <button className="pri w" disabled={!ack} onClick={onDone}>Finish guide</button>
     <div className="row" style={{marginTop:8}}><button className="sm" style={{flex:1}} onClick={()=>setI(i-1)}>‹ Back</button><button className="sm" style={{flex:1}} onClick={onLater}>Ask me next time</button></div></>
    :<div className="row"><button className="sm" onClick={()=>setI(S.length-1)}>Skip</button><span style={{flex:1}}/>{i>0&&<button className="sm" onClick={()=>setI(i-1)}>‹ Back</button>}<button className="pri" onClick={()=>setI(i+1)}>Next ›</button></div>}

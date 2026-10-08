@@ -90,3 +90,8 @@ export function fixCheck(uid,P,kind,T,now=Date.now()){
  if(T>now+6e4)return{ok:false,msg:"Time out can't be in the future."};
  if(!bf||bf.type!=='in')return{ok:false,msg:bf?`You were already timed out at ${tm(T)} (since ${fmt(bf.ts)}). Nothing to close.`:'You were not timed in before that time. Use "Time in + out" instead.'};
  return{ok:true,partner:bf,msg:`Ends your session that started ${fmt(bf.ts)} · ${dur((T-bf.ts)/36e5)}`}}
+
+// today's calendar date in Manila (YYYY-MM-DD), whatever timezone the phone is set to
+export const manilaDay=(t=Date.now())=>new Date(t).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
+// whole calendar days from TODAY (Manila) to the deadline date: 0 = due today, -1 = was due yesterday
+export const daysLeft=due=>Math.round((Date.parse(d2s(due))-Date.parse(manilaDay()))/864e5);
