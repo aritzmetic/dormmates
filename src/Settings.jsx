@@ -1,12 +1,15 @@
 import {useEffect,useState} from 'react';
 import {signOut} from 'firebase/auth';
-import {doc,collection,setDoc,updateDoc,addDoc,arrayRemove,deleteField} from 'firebase/firestore';
+import {doc,collection,setDoc,updateDoc,addDoc,arrayRemove,deleteField,onSnapshot} from 'firebase/firestore';
+import {enablePush} from './push';
 import {auth,db} from './firebase';
-import {ping} from './notify';
+import {ping,pingWait} from './notify';
 import {List,Item,Av,buzz} from './ui';
 import {cyc,cycLabel,fmt,sessions,notify,FIX} from './lib';
 
-const DFLT={inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6]};
+const DFLT={inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6],longOn:false,longH:10};
+const t12=v=>{const[h,m]=String(v||'0:0').split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`};
+const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const csv=(name,rows)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(x=>x.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n')],{type:'text/csv'}));a.download=name;a.click()};
 const ord=n=>n+(n%100>10&&n%100<14?'th':['th','st','nd','rd'][n%10]||'th');
 const Row=({children,...p})=><div className="row sp" style={{marginBottom:10}} {...p}>{children}</div>;
@@ -19,17 +22,35 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces}){
- const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState('');
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,replayTour}){
+ const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
+ useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  useEffect(()=>{setRp({...DFLT,...(PF||{})})},[JSON.stringify(PF)]);
  const perm=window.Notification?.permission,nRem=(rp.inOn?1:0)+(rp.outOn?1:0),pct=cfg.basePct??25,due=cfg.dueDay||5,back=cfg.fixBackDays?`${cfg.fixBackDays} days back`:'no limit on how far back';
  const hostOnly=!owner&&<p className="mut" style={{marginBottom:10}}>🔒 Only the host ({nm(sp.ownerId)}) can change these.</p>;
  const upd=async(patch,msg)=>{try{await updateDoc(sref,patch);buzz();say(msg||'Saved ✓')}catch(e){say('Failed: '+e.message,5000)}};
 
  // ---- me ----
- const savePf=async()=>{try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,inOn:!!rp.inOn,inAt:rp.inAt,outOn:!!rp.outOn,outAt:rp.outAt,days:rp.days,updatedAt:Date.now()},{merge:true});buzz();
-  say(perm==='granted'?'Reminders saved ✓':'Saved. Now tap "Enable notifications" so your phone can receive them.',5000)}catch(e){say('Failed: '+e.message,5000)}};
+ const savePf=async()=>{
+  if(busy)return;const on=rp.inOn||rp.outOn||rp.longOn;
+  if(on&&!rp.days.length)return say('Pick at least one day to repeat on.',4000);
+  setBusy(true);
+  try{
+   await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,inOn:!!rp.inOn,inAt:rp.inAt,outOn:!!rp.outOn,outAt:rp.outAt,days:rp.days,longOn:!!rp.longOn,longH:+rp.longH||10,tz:new Date().getTimezoneOffset(),updatedAt:Date.now()},{merge:true});buzz();
+   if(!on)return say('Reminders turned off ✓');
+   // make sure THIS phone can actually receive them: ask permission + register the push token now
+   if(window.Notification?.permission!=='granted')await askNotif();
+   if(window.Notification?.permission!=='granted')return say('Saved, but notifications are blocked on this phone, so you will not be notified. Allow them in your phone settings.',7000);
+   let reg=true;try{await enablePush(u.uid)}catch(e){reg=false;say('Saved, but this phone could not register for push: '+e.message,7000)}
+   const days=rp.days.length===7?'every day':rp.days.map(d=>DN[d]).join(', '),parts=[rp.inOn&&`time in ${t12(rp.inAt)}`,rp.outOn&&`time out ${t12(rp.outAt)}`,rp.longOn&&`alert after ${rp.longH||10}h timed in`].filter(Boolean);
+   await notify('⏰ Reminders set ✓',`You'll be reminded: ${parts.join(' · ')} (${days}).`);
+   if(reg)say('Reminders set ✓ Check your notifications',5000);
+  }catch(e){say('Failed: '+e.message,6000)}finally{setBusy(false)}};
  const test=async()=>{if(!(await notify('DormMates test 🔔','If you can read this, notifications work on this device.')))say('Notifications are off or blocked. Tap "Enable notifications" first.',5000)};
+ const testServer=async()=>{setBusy(true);try{await enablePush(u.uid);const j=await pingWait({sid:sp.id,kind:'test',id:'t'+Date.now()});
+   say(j.devices>0?`Server push sent to ${j.devices} device${j.devices>1?'s':''} ✓ You should see it in a few seconds.`:'The server has no registered device for you. Tap Enable notifications, then try again.',7000)}
+  catch(e){say('Server test failed: '+e.message,7000)}finally{setBusy(false)}};
+ const ago=hb?Math.round((Date.now()-hb)/6e4):null,stale=hb===null||(ago!=null&&ago>15);
 
  // ---- space ----
  const saveSpace=ev=>{ev.preventDefault();const g=new FormData(ev.target),n=String(g.get('n')).trim();if(!n)return say('The space needs a name.');
@@ -108,16 +129,30 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      {owner&&<button className="pri w">Save bill defaults</button>}</form></fieldset>
    </Acc></Item>
 
-  <Item className="acc-wrap">
-   <Acc id="alerts" open={open} set={setOpen} icon="🔔" title="Notifications & reminders" sub={`${perm==='granted'?'On for this phone':'Off for this phone'} · ${nRem} reminder${nRem===1?'':'s'}`}>
+  <Item className="acc-wrap" data-tour="alerts">
+   <Acc id="alerts" open={open} set={setOpen} icon="🔔" title="Notifications & reminders" sub={`${perm==='granted'?'On for this phone':'Off for this phone'} · ${nRem+(rp.longOn?1:0)} reminder${nRem+(rp.longOn?1:0)===1?'':'s'}`}>
     {perm!=='granted'?<div className="warn">Notifications are off on this phone. <button className="sm" style={{marginLeft:6}} onClick={askNotif}>Enable notifications</button></div>
-     :<Row><span>✅ Notifications are on</span><button className="sm" onClick={test}>Send a test</button></Row>}
+     :<><Row><span>✅ Notifications are on</span><button className="sm" onClick={test}>Send a test</button></Row><button className="w" style={{marginBottom:10}} disabled={busy} onClick={testServer}>📡 Test a push from the server</button></>}
+    {hb!==undefined&&(stale?<div className="warn">⚠️ The reminder timer is not running{hb?` (last ran ${ago} min ago)`:''}. Reminders will only reach you while the app is open until the host sets up the 5-minute timer (see README → Reminders).</div>:<p className="mut" style={{marginBottom:10}}>✅ Reminder timer last ran {ago<1?'just now':ago+' min ago'}.</p>)}
     <p className="mut" style={{marginBottom:6}}>Get a push at the times you choose. A time-in reminder is skipped if you're already in, and a time-out reminder is skipped if you're already out.</p>
     <label className="chk"><input type="checkbox" checked={!!rp.inOn} onChange={e=>setRp({...rp,inOn:e.target.checked})}/>Remind me to time in</label>{rp.inOn&&<input type="time" value={rp.inAt} onChange={e=>setRp({...rp,inAt:e.target.value})}/>}
     <label className="chk"><input type="checkbox" checked={!!rp.outOn} onChange={e=>setRp({...rp,outOn:e.target.checked})}/>Remind me to time out</label>{rp.outOn&&<input type="time" value={rp.outAt} onChange={e=>setRp({...rp,outAt:e.target.value})}/>}
+    <label className="chk"><input type="checkbox" checked={!!rp.longOn} onChange={e=>setRp({...rp,longOn:e.target.checked})}/>Alert me if I stay timed in too long</label>{rp.longOn&&<><label>After how many hours?</label><select value={rp.longH} onChange={e=>setRp({...rp,longH:+e.target.value})}>{[4,6,8,10,12,16,24].map(h=><option key={h} value={h}>{h} hours</option>)}</select></>}
     <label>Repeat on</label><div className="fchips">{['Su','Mo','Tu','We','Th','Fr','Sa'].map((d,i)=><button key={i} className={`fchip ${rp.days.includes(i)?'on':''}`} onClick={()=>setRp({...rp,days:rp.days.includes(i)?rp.days.filter(x=>x!==i):[...rp.days,i].sort()})}>{d}</button>)}</div>
-    <button className="pri w" onClick={savePf}>Save reminders</button>
+    <button className="pri w" disabled={busy} onClick={savePf}>{busy?'Saving…':'Save reminders'}</button>
     <p className="mut" style={{marginTop:10}}>The “confirm you are away” alert at 7:30 PM is automatic and cannot be turned off.</p>
+   </Acc></Item>
+
+  <Item className="acc-wrap" data-tour="look">
+   <Acc id="look" open={open} set={setOpen} icon="🌗" title="Appearance" sub={`Theme: ${thm==='light'?'Light':thm==='system'?'Follow my phone':'Dark'}`}>
+    <div className="seg">{[['light','☀️ Light'],['dark','🌙 Dark'],['system','📱 System']].map(([k,l])=><button key={k} className={thm===k?'on':''} onClick={()=>{setThm(k);buzz()}}>{l}</button>)}</div>
+    <p className="mut">Saved on this phone. “System” switches automatically with your phone's setting.</p>
+   </Acc></Item>
+
+  <Item className="acc-wrap">
+   <Acc id="help" open={open} set={setOpen} icon="❓" title="Help" sub="Replay the How-To guide">
+    <p className="mut" style={{marginBottom:10}}>Take the page-by-page tour of the app again whenever you like.</p>
+    <button className="pri w" onClick={replayTour}>▶ Play the How-To guide</button>
    </Acc></Item>
 
   {owner&&<Item className="acc-wrap">

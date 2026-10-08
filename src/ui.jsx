@@ -8,7 +8,7 @@ export function Num({v,d=1}){const r=useRef();useEffect(()=>{const c=animate(0,v
 export const Av=({m})=>m.p?<img className="av" src={m.p} referrerPolicy="no-referrer"/>:<div className="av">{m.n[0]}</div>;
 export const Cycle=({off,set,d})=><div className="row sp" style={{marginBottom:12}}><button className="sm" onClick={()=>set(off-1)}>‹</button><b>{cycLabel(cyc(off,d))}</b><button className="sm" onClick={()=>set(off+1)}>›</button></div>;
 export const List=({children})=><motion.div initial="h" animate="s" variants={{s:{transition:{staggerChildren:.05}}}}>{children}</motion.div>;
-export const Item=({children,className='card'})=><motion.div className={className} variants={{h:{opacity:0,y:16},s:{opacity:1,y:0}}}>{children}</motion.div>;
+export const Item=({children,className='card',...p})=><motion.div className={className} variants={{h:{opacity:0,y:16},s:{opacity:1,y:0}}} {...p}>{children}</motion.div>;
 export function Sheet({close,children}){const dc=useDragControls();
  return <motion.div className="scrim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={close}>
   <motion.div className="sheet" initial={{y:'100%'}} animate={{y:0}} exit={{y:'100%'}} transition={{type:'spring',damping:30,stiffness:320}} drag="y" dragControls={dc} dragListener={false} dragConstraints={{top:0,bottom:0}} dragElastic={{top:0,bottom:.6}} onDragEnd={(_,i)=>i.offset.y>90&&close()} onClick={e=>e.stopPropagation()}>
