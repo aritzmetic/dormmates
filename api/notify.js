@@ -43,10 +43,14 @@ export default async function handler(req,res){
       await r.update({pushed:true});to=others(sp,uid);
       msg={title:`📣 ${sp.name}`,body:cut(d.text),tag:'ann-'+id};
     }
+    else if(kind==='test'){
+      to=[uid];msg={title:'✅ Server push works',body:'DormMates can notify this phone, even when the app is closed.',tag:'test'};
+    }
     else if(kind==='bills'){
-      const{d}=await get('bills');
-      if(!owner||!d||!(d.elec||d.water))return skip();
-      to=others(sp,uid);
+      // only fires when the host taps "Send to dormmates" (sentAt is stamped then), never for a private draft
+      const{r,d}=await get('bills');
+      if(!owner||!d||!(d.elec||d.water)||!d.sentAt||!fresh(d.sentAt)||d.billPushed===d.sentAt)return skip();
+      await r.update({billPushed:d.sentAt});to=others(sp,uid);
       msg={title:'💡 Bills updated',body:`Electric ${money(d.elec)} · Water ${money(d.water)}.${d.due?` Pay by ${dd(d.due)}.`:''} Open the app to see your share.`,tag:'bills-'+id};
     }
     else if(kind==='final'){
@@ -80,6 +84,24 @@ export default async function handler(req,res){
       to=(sp.members||[]).filter(m=>m!==uid&&!d.paid?.[m]);
       msg={title:'💡 Friendly bill reminder',body:`${sp.name}: you still have an unpaid bill${d.due?` (pay by ${dd(d.due)})`:''}. Open the app to see your share.`,tag:'nudge-'+id};
     }
+    else if(kind==='chore'){
+      const{r,d}=await get('chores');
+      if(!d||d.createdBy!==uid||!fresh(d.createdAt)||d.pushed||!d.assignee||d.assignee===uid)return skip();
+      await r.update({pushed:true});to=[d.assignee];
+      msg={title:`🧹 ${who(sp,uid)} gave you a chore`,body:cut(d.title),tag:'chore-'+id};
+    }
+    else if(kind==='suggest'){
+      const{r,d}=await get('exceptions');
+      if(!owner||!d||d.suggestedBy!==uid||d.status!=='suggested'||!fresh(d.createdAt)||d.pushed)return skip();
+      await r.update({pushed:true});to=[d.uid];
+      msg={title:`💡 ${who(sp,uid)} suggested a correction`,body:cut(`${KIND[d.kind||'add']}${d.batchN>1?` · ${d.batchN} days`:''} · “${d.reason||'no reason'}”. Open Fixes to accept or decline.`),tag:'suggest-'+id};
+    }
+    else if(kind==='sugdecision'){
+      const{r,d}=await get('exceptions');
+      if(!d||d.uid!==uid||!d.suggestedBy||!['approved','denied'].includes(d.status)||!fresh(d.decidedAt)||d.pushedDecision===d.status)return skip();
+      await r.update({pushedDecision:d.status});to=[d.suggestedBy];
+      msg={title:d.status==='approved'?'✅ Suggestion accepted':'❌ Suggestion declined',body:cut(`${who(sp,uid)} ${d.status==='approved'?'accepted':'declined'} your suggested correction.`),tag:'sug-'+id};
+    }
     else if(kind==='fixnew'){
       const{r,d}=await get('exceptions');
       if(!d||d.uid!==uid||d.status!=='pending'||!fresh(d.createdAt)||d.pushed||owner)return skip();
@@ -96,8 +118,8 @@ export default async function handler(req,res){
     }
     else return res.status(400).json({error:'unknown kind'});
 
-    if(msg)await push(to,msg);
-    res.json({ok:true,sent:to.length});
+    const devices=msg?await push(to,msg):0;
+    res.json({ok:true,sent:to.length,devices});
   }catch(e){
     console.error('notify error',e);
     res.status(e.code?.startsWith?.('auth/')?401:500).json({error:e.message});
