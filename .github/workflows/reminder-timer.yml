@@ -1,0 +1,11 @@
+name: reminder-timer
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/tick
+        run: curl -fsS --max-time 50 "${{ secrets.APP_URL }}/api/tick?key=${{ secrets.CRON_SECRET }}"
