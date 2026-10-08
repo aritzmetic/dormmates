@@ -43,3 +43,20 @@ These are stored on the space document under `cfg` (`hostAuto`, `needReason`, `f
 ## After updating
 Publish the new `firestore.rules` (the host's own fixes can now be created already-approved, and request `kind` is validated).
 Old fix requests keep working exactly as before.
+
+## Reminders (important)
+Custom reminders are sent by the server, so something must call `/api/tick` every 5 minutes (Vercel Hobby cron is only daily, so use a free outside timer):
+1. Vercel → Settings → Environment Variables: add `CRON_SECRET` (any long random text) and `FIREBASE_SERVICE_ACCOUNT` (service-account JSON), redeploy.
+2. cron-job.org → new job → URL `https://YOUR-APP.vercel.app/api/tick?key=YOUR_CRON_SECRET` → every 5 minutes.
+3. A second job at 7:30 PM and 7:55 PM Asia/Manila → `https://YOUR-APP.vercel.app/api/remind?key=YOUR_CRON_SECRET`.
+4. In the app: Settings → Notifications & reminders → *Save reminders* (you get a "Reminders set" notification), then *Test a push from the server*. The same screen tells you if the timer has stopped running.
+While the app is open, reminders also fire on the phone itself as a backup.
+
+## Bills flow
+*Save draft & calculate* is private to the host (`billDrafts`). Dormmates only see the bills and get notified after the host taps *Send to dormmates*.
+
+## Fix suggestions
+In Fixes, the host picks a member under *Counter-check*, reviews their punches (with photo / location proof), and can suggest a time in / out. The member must accept it before it counts.
+
+## How-To guide
+Shown once to every user until they confirm (`prefs/{uid}.tourV`). Replay it from Settings → Help. Change `TOUR_V` in `src/Tour.jsx` to show it to everyone again.
