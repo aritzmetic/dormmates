@@ -5,6 +5,7 @@ const dt=t=>new Date(t).toLocaleDateString('en-PH',{month:'short',day:'numeric',
 const dur=h=>{const m=Math.round((+h||0)*60);return `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`};
 
 function page(doc,r,i,n){
+ const U=!!r.useDays,fh=h=>U?`${+(h/24).toFixed(2)} day${Math.abs(h/24-1)<1e-9?'':'s'}`:dur(h),uw=U?'days':'hours';
  const W=210,L=14,R=196;
  const T=(s,x,y,{size=10,bold=false,color=C.ink,align='left',style}={})=>{doc.setFont('helvetica',style||(bold?'bold':'normal'));doc.setFontSize(size);doc.setTextColor(...color);doc.text(String(s),x,y,{align})};
  const fill=c=>doc.setFillColor(...c),box=(x,y,w,h,c,rd=0)=>{fill(c);rd?doc.roundedRect(x,y,w,h,rd,rd,'F'):doc.rect(x,y,w,h,'F')};
@@ -45,8 +46,8 @@ function page(doc,r,i,n){
   ['Bill total',r.elec,r.water,r.elec+r.water],
   [r.nFixed?`Base pool (${ep}% of the bill)`:'Base pool (none selected)',r.poolEBase,r.poolWBase,r.poolEBase+r.poolWBase,r.nFixed?`Split equally among ${r.nFixed} fixed member${r.nFixed>1?'s':''}`:'No fixed members, so 100% is split by hours'],
   ['Your base share',r.eBase,r.wBase,r.eBase+r.wBase,r.inFixed?`Pool / ${r.nFixed}`:'You are not in the fixed group'],
-  [`Usage pool (${100-ep}% of the bill)`,r.poolEUse,r.poolWUse,r.poolEUse+r.poolWUse,'Split by hours among everyone'],
-  ['Your usage share',r.eUse,r.wUse,r.eUse+r.wUse,`${dur(r.hours)} / ${dur(r.totalHours)} of the usage pool`],
+  [`Usage pool (${100-ep}% of the bill)`,r.poolEUse,r.poolWUse,r.poolEUse+r.poolWUse,`Split by ${uw} among everyone`],
+  ['Your usage share',r.eUse,r.wUse,r.eUse+r.wUse,`${fh(r.hours)} / ${fh(r.totalHours)} of the usage pool`],
  ];
  y+=8;rows.forEach((row,k)=>{const h=row[4]?12:9;if(k%2)box(L,y,R-L,h,[250,248,255]);
   T(row[0],cx[0],y+(row[4]?5:6),{size:9,bold:k===2||k===4});if(row[4])T(row[4],cx[0],y+9.3,{size:7.3,color:C.mut});
@@ -59,19 +60,19 @@ function page(doc,r,i,n){
  // ----- hours tiles -----
  box(L,y-4.2,1.6,6,C.peri);T('Your time in the dorm',L+5,y,{size:11.5,bold:true});y+=5;
  const pct=r.totalHours?r.hours/r.totalHours*100:100/(r.nAll||1),rateE=r.totalHours?r.poolEUse/r.totalHours:0,rateW=r.totalHours?r.poolWUse/r.totalHours:0;
- [[dur(r.hours),'YOUR HOURS'],[dur(r.totalHours),'EVERYONE\'S HOURS'],[pct.toFixed(1)+'%','YOUR SHARE OF HOURS']].forEach(([v,l],k)=>{const x=L+k*61;box(x,y,60,19,C.soft,3);T(v,x+5,y+9,{size:14,bold:true});T(l,x+5,y+15,{size:7,bold:true,color:C.mut})});
+ [[fh(r.hours),U?'YOUR DAYS':'YOUR HOURS'],[fh(r.totalHours),U?'EVERYONE\'S DAYS':'EVERYONE\'S HOURS'],[pct.toFixed(1)+'%',U?'YOUR SHARE OF DAYS':'YOUR SHARE OF HOURS']].forEach(([v,l],k)=>{const x=L+k*61;box(x,y,60,19,C.soft,3);T(v,x+5,y+9,{size:14,bold:true});T(l,x+5,y+15,{size:7,bold:true,color:C.mut})});
  y+=23;
- T(`Usage rate:  ${php(rateE)} per hour (electricity)   |   ${php(rateW)} per hour (water)`,L,y,{size:8.5,color:C.mut});
- T(`Usage share = your hours / everyone's hours x usage pool.${r.nFixed?' Base share = base pool / fixed members.':''}`,L,y+5,{size:8.5,color:C.mut});
+ T(`Usage rate:  ${php(rateE*(U?24:1))} per ${U?'day':'hour'} (electricity)   |   ${php(rateW*(U?24:1))} per ${U?'day':'hour'} (water)`,L,y,{size:8.5,color:C.mut});
+ T(`Usage share = your ${uw} / everyone's ${uw} x usage pool.${r.nFixed?' Base share = base pool / fixed members.':''}`,L,y+5,{size:8.5,color:C.mut});
  y+=11;
 
  // ----- daily bars -----
- T('Your hours, day by day',L,y,{size:9,bold:true});y+=3;
+ if(!U){T('Your hours, day by day',L,y,{size:9,bold:true});y+=3;
  const d=r.daily||[],mx=Math.max(1,...d),bw=(R-L)/Math.max(d.length,1),base=y+21;
  box(L,y,R-L,25,[250,248,255],3);
  d.forEach((v,k)=>{const h=v/mx*16;if(v>0){fill(C.peri);doc.roundedRect(L+k*bw+.6,base-h-2,Math.max(bw-1.2,.8),h,.6,.6,'F')}
   if(k%5===0)T(new Date(r.ps+k*864e5).getDate(),L+k*bw+bw/2,base+3.2,{size:6.5,color:C.mut,align:'center'})});
- T(`peak ${dur(mx)}`,R-2,y+4,{size:6.8,color:C.mut,align:'right'});
+ T(`peak ${dur(mx)}`,R-2,y+4,{size:6.8,color:C.mut,align:'right'})}else{T('Days counted by the host, because no hours were recorded for this period.',L,y,{size:8.5,color:C.mut})}
 
  // ----- footer -----
  doc.setDrawColor(...C.line);doc.line(L,281,R,281);

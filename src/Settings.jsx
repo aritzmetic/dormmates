@@ -1,11 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {signOut} from 'firebase/auth';
-import {doc,collection,setDoc,updateDoc,addDoc,arrayRemove,deleteField,onSnapshot} from 'firebase/firestore';
+import {doc,collection,setDoc,updateDoc,addDoc,arrayRemove,deleteField,onSnapshot,getDocs,writeBatch} from 'firebase/firestore';
 import {enablePush} from './push';
 import {auth,db} from './firebase';
 import {ping,pingWait} from './notify';
 import {List,Item,Av,buzz} from './ui';
-import {cyc,cycLabel,fmt,sessions,notify,FIX} from './lib';
+import {cyc,cycLabel,fmt,sessions,notify,FIX,defDue,cycEndOf,sameSet} from './lib';
 
 const DFLT={inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6],longOn:false,longH:10};
 const t12=v=>{const[h,m]=String(v||'0:0').split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`};
@@ -72,8 +72,29 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
   upd({'cfg.hostAuto':g.has('ha'),'cfg.needReason':g.has('nr'),'cfg.fixBackDays':+g.get('fb')||0,'cfg.fixMaxDays':Math.min(62,Math.max(1,+g.get('fm')||31))})};
 
  // ---- bill defaults ----
- const saveBills=ev=>{ev.preventDefault();const g=new FormData(ev.target),p=g.get('p');
-  upd({'cfg.basePct':p===''?25:Math.min(100,Math.max(0,+p||0)),'cfg.fixedIds':g.getAll('f'),'cfg.dueDay':+g.get('d')||5})};
+ const saveBills=async ev=>{ev.preventDefault();const g=new FormData(ev.target),p=g.get('p'),np=p===''?25:Math.min(100,Math.max(0,+p||0)),nfix=g.getAll('f'),nday=+g.get('d')||5,
+   oldDay=cfg.dueDay||5,dayChg=nday!==oldDay,cfgChg=np!==(cfg.basePct??25)||!sameSet(nfix,cfg.fixedIds||[]);
+  try{await updateDoc(sref,{'cfg.basePct':np,'cfg.fixedIds':nfix,'cfg.dueDay':nday});buzz()}catch(e){return say('Failed: '+e.message,5000)}
+  if(!dayChg&&!cfgChg)return say('Saved ✓');
+  // push the new defaults into the bills that did not override them: recent / upcoming periods only, never a finalized one
+  try{
+   const min=cyc(-3,cd)[0],t=Date.now(),bt=writeBatch(db),parts=[];let n=0,hit=null,newDue=null;
+   const [bs,ds]=await Promise.all([getDocs(collection(db,'spaces',sp.id,'bills')),getDocs(collection(db,'spaces',sp.id,'billDrafts'))]);
+   const patch=(d,draft)=>{const x=d.data();if(x.final||+d.id<min)return;const ch={};
+    if(dayChg&&!x.dueCustom)ch.due=defDue(x.pe??cycEndOf(d.id),nday);
+    if(cfgChg&&!x.cfgCustom){if(x.pct!=null)ch.pct=deleteField();if(x.fixed!=null)ch.fixed=deleteField()}
+    if(!Object.keys(ch).length)return;
+    if(draft)return bt.update(d.ref,ch);
+    bt.update(d.ref,{...ch,updAt:t});n++;
+    if(x.elec||x.water){if(!hit||+d.id>+hit.id){hit=d;newDue=ch.due??x.due}}};
+   bs.docs.forEach(d=>patch(d,false));ds.docs.forEach(d=>patch(d,true));
+   if(!n&&!ds.size)return say('Saved ✓ Applies to every new bill period');
+   await bt.commit();
+   if(dayChg)parts.push(`deadline is now ${new Date(newDue||defDue(Date.now(),nday)).toLocaleDateString('en-PH',{month:'long',day:'numeric'})}`);
+   if(cfgChg)parts.push(`base contribution ${np}%${nfix.length?', '+nfix.length+' fixed member'+(nfix.length>1?'s':''):', no fixed group'}`);
+   if(hit)ping({sid:sp.id,kind:'billupd',id:hit.id,text:`The host updated your bills: ${parts.join(' · ')}. Open Bills to see your share.`});
+   say(hit?'Saved ✓ Existing bills updated and your dormmates were notified':'Saved ✓ Existing bills updated',5000)
+  }catch(e){say('Saved, but could not update existing bills: '+e.message,7000)}};
 
  // ---- host tools ----
  const sendAn=async()=>{if(!an.trim())return;try{const ar=await addDoc(collection(db,'spaces',sp.id,'announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');ping({sid:sp.id,kind:'announcement',id:ar.id});buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
@@ -132,7 +153,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      <label>Base contribution (% of each bill, split equally)</label><input name="p" type="number" min="0" max="100" step="any" inputMode="decimal" defaultValue={pct}/>
      <label>Who pays the base contribution?</label>{members.map(m=><label key={m.id} className="chk"><input type="checkbox" name="f" value={m.id} defaultChecked={(cfg.fixedIds||[]).includes(m.id)}/>{m.n}</label>)}
      <label>Payment due on day of the month after the cycle</label><select name="d" defaultValue={due}>{[...Array(28)].map((_,i)=><option key={i} value={i+1}>{i+1}</option>)}</select>
-     <p className="mut" style={{margin:'4px 0 10px'}}>These are the starting values for every new bill period. A period you already saved keeps its own numbers, and you can still change any period in the Bills tab.</p>
+     <p className="mut" style={{margin:'4px 0 10px'}}>Changing these also updates bills that are not finalized yet (unless you set a custom value on that bill), and your dormmates are notified. Finalized bills never change.</p>
      {owner&&<button className="pri w">Save bill defaults</button>}</form></fieldset>
    </Acc></Item>
 

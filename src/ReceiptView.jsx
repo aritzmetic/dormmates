@@ -7,14 +7,14 @@ const dur=h=>{const m=Math.round((+h||0)*60);return `${Math.floor(m/60)}h ${Stri
 
 // In-app receipt viewer: same numbers and layout as the PDF, opens as a full-screen pop-up.
 export default function ReceiptView({list,i,setI,paid,onClose,onDownload}){
- const r=list[i],isPaid=paid(r),ep=r.nFixed?r.pct:0,d=r.daily||[],mx=Math.max(1,...d),
+ const r=list[i],U=!!r.useDays,fh=h=>U?`${+(h/24).toFixed(2)} day${Math.abs(h/24-1)<1e-9?'':'s'}`:dur(h),uw=U?'days':'hours',isPaid=paid(r),ep=r.nFixed?r.pct:0,d=r.daily||[],mx=Math.max(1,...d),
   pc=r.totalHours?r.hours/r.totalHours*100:100/list.length,rateE=r.totalHours?r.poolEUse/r.totalHours:0,rateW=r.totalHours?r.poolWUse/r.totalHours:0;
  const rows=[
   ['Bill total',r.elec,r.water,r.elec+r.water],
   [r.nFixed?`Base pool (${ep}% of the bill)`:'Base pool (none selected)',r.poolEBase,r.poolWBase,r.poolEBase+r.poolWBase,r.nFixed?`Split equally among ${r.nFixed} fixed member${r.nFixed>1?'s':''}`:'No fixed members, so 100% is split by hours'],
   ['Your base share',r.eBase,r.wBase,r.eBase+r.wBase,r.inFixed?`Pool ÷ ${r.nFixed}`:'You are not in the fixed group',1],
-  [`Usage pool (${100-ep}% of the bill)`,r.poolEUse,r.poolWUse,r.poolEUse+r.poolWUse,'Split by hours among everyone'],
-  ['Your usage share',r.eUse,r.wUse,r.eUse+r.wUse,`${dur(r.hours)} / ${dur(r.totalHours)} of the usage pool`,1],
+  [`Usage pool (${100-ep}% of the bill)`,r.poolEUse,r.poolWUse,r.poolEUse+r.poolWUse,`Split by ${uw} among everyone`],
+  ['Your usage share',r.eUse,r.wUse,r.eUse+r.wUse,`${fh(r.hours)} / ${fh(r.totalHours)} of the usage pool`,1],
  ];
  return <motion.div className="rv" initial={{opacity:0,y:40}} animate={{opacity:1,y:0}} exit={{opacity:0,y:40}} transition={{type:'spring',damping:30,stiffness:320}}>
   <div className="rvbar">
@@ -41,12 +41,13 @@ export default function ReceiptView({list,i,setI,paid,onClose,onDownload}){
      <div className="prow tot"><span>YOUR SHARE</span><span>{num(r.eBase+r.eUse)}</span><span>{num(r.wBase+r.wUse)}</span><span>{num(r.total)}</span></div></div>
 
     <div className="ph2"><i style={{background:'var(--peri)'}}/>Your time in the dorm</div>
-    <div className="ptiles"><div><b>{dur(r.hours)}</b><span>YOUR HOURS</span></div><div><b>{dur(r.totalHours)}</b><span>EVERYONE'S HOURS</span></div><div><b>{pc.toFixed(1)}%</b><span>YOUR SHARE</span></div></div>
-    <p className="pm" style={{marginTop:10}}>Usage rate: {php(rateE)} per hour (electricity) · {php(rateW)} per hour (water)</p>
-    <p className="pm">Usage share = your hours ÷ everyone's hours × usage pool.{r.nFixed?' Base share = base pool ÷ fixed members.':''}</p>
+    <div className="ptiles"><div><b>{fh(r.hours)}</b><span>{U?'YOUR DAYS':'YOUR HOURS'}</span></div><div><b>{fh(r.totalHours)}</b><span>{U?"EVERYONE'S DAYS":"EVERYONE'S HOURS"}</span></div><div><b>{pc.toFixed(1)}%</b><span>YOUR SHARE</span></div></div>
+    <p className="pm" style={{marginTop:10}}>Usage rate: {php(rateE*(U?24:1))} per {U?'day':'hour'} (electricity) · {php(rateW*(U?24:1))} per {U?'day':'hour'} (water)</p>
+    <p className="pm">Usage share = your {uw} ÷ everyone's {uw} × usage pool.{r.nFixed?' Base share = base pool ÷ fixed members.':''}</p>
 
-    <div className="pl" style={{marginTop:16}}>YOUR HOURS, DAY BY DAY</div>
-    <div className="pchart">{d.map((v,k)=><div key={k} className="pcol"><div className="pbar" style={{height:Math.max(v>0?4:0,v/mx*100)+'%'}}/><span>{k%5===0?new Date(r.ps+k*864e5).getDate():''}</span></div>)}</div>
+    {!U&&<><div className="pl" style={{marginTop:16}}>YOUR HOURS, DAY BY DAY</div>
+    <div className="pchart">{d.map((v,k)=><div key={k} className="pcol"><div className="pbar" style={{height:Math.max(v>0?4:0,v/mx*100)+'%'}}/><span>{k%5===0?new Date(r.ps+k*864e5).getDate():''}</span></div>)}</div></>}
+    {U&&<p className="pm" style={{marginTop:12}}>Days counted by the host, because no hours were recorded for this period.</p>}
     <p className="pm" style={{marginTop:12,fontSize:11}}>Cents are rounded so all tenants' shares add up exactly to the bills. Approved time fixes are included. Visible only to {r.name} and the host.</p>
    </div></div></div></motion.div>
 }

@@ -11,7 +11,8 @@ import Settings from './Settings';
 import Tour,{TOUR_V} from './Tour';
 import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
-import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel} from './lib';
+import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
+import Cam from './Cam';
 
 // shown to the host right after a space is created: they must choose when the billing cycle starts
 function CycleSetup({sp,say}){const[day,setDay]=useState(14),[busy,setBusy]=useState(false);
@@ -33,7 +34,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
  const setThm=m=>{setTheme(m);setThm_(m)};
  const PX=withFix(P,X); // punches + approved time-in-only / time-out-only fixes
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
@@ -76,10 +77,10 @@ export default function App(){
  const H=id=>hrs(id,PX,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
  const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
 
- async function save(pr,type){type=type||(on?'out':'in');const pref=await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr});setMenu(null);buzz();if(type!=='away')ping({sid:sp.id,kind:'punch',id:pref.id});
+ async function save(pr,type){type=type||(on?'out':'in');const pref=await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr});setMenu(null);buzz();ping({sid:sp.id,kind:'punch',id:pref.id});   // time in, time out AND "still away" confirmations notify the dorm
   if(type==='away')return say('Confirmed ✓ Next check is tomorrow 7:30–8:00 PM');setBurst(b=>b+1);
   if(type==='in')return say('Timed in ✓');const m=`Auto time-in ${dayWord(fd(Date.now()))} at 8:00 PM. Confirm from 7:30 PM to stay out.`;say('Timed out ✓\n'+m,6000);notify('Timed out ✓',m)}
- const photo=async(fl,t)=>fl&&save({photo:await shrink(fl)},t);
+ const photo=async(fl,t)=>fl&&save({photo:await shrink(fl,true)},t);   // phone-camera-app fallback: assume front camera, so mirror it too
  const loc=t=>navigator.geolocation.getCurrentPosition(p=>save({loc:{lat:p.coords.latitude,lng:p.coords.longitude}},t),()=>say('Location blocked. Use a picture instead.'),{enableHighAccuracy:true,timeout:15000});
  async function leave(s){const rest=s.members.filter(m=>m!==u.uid),ref=doc(db,'spaces',s.id);if(!rest.length)return wipe(s.id);
   const up={members:arrayRemove(u.uid),['names.'+u.uid]:deleteField()};if(s.ownerId===u.uid)up.ownerId=rest[0];return updateDoc(ref,up)}
@@ -111,9 +112,10 @@ export default function App(){
   {off===0&&awayCard}
   <Item data-tour="board"><h3>Cycle leaderboard</h3>{ms.map((m,i)=><div key={m.id} style={{marginTop:12}}><div className="row sp"><span>{i?'':'👑 '}{m.n}</span><b>{dur(m.h)}</b></div><div className="bar"><motion.b initial={{width:0}} animate={{width:m.h/mx*100+'%'}} transition={{duration:.9,delay:.1*i}}/></div></div>)}</Item></List>};
 
- const Dorm=()=><List><h2 style={{margin:'6px 0 12px'}}>Who's home</h2>{members.map(m=>{const l=last(m.id),i=l?.type==='in';
+ const Dorm=()=><List><h2 style={{margin:'6px 0 12px'}}>Who's home</h2>{members.map(m=>{const l=last(m.id),i=l?.type==='in',al=!i&&l?PX.filter(p=>p.uid===m.id&&p.type==='away'&&p.ts>l.ts).sort((a,b)=>b.ts-a.ts)[0]:null;
   return <Item key={m.id} className="card row" data-tour={m.id===members[0].id?'dorm':undefined}><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{m.id===sp.ownerId&&<span className="mut"> · host</span>}
-   <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}</div></div>{proof(l)}
+   <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}{l?.auto&&i?' · auto time-in (did not confirm)':''}</div>
+   {al&&<div className="awayline">📍 Confirmed still away · {fmt(al.ts)}</div>}</div>{al&&proof(al)}{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
   {owner&&<Item><p className="mut">⚙️ Cycle day, invite code, members and the host tools (send a message to everyone) are now in the <b style={{color:'var(--ink)'}}>Settings</b> tab.</p></Item>}
   {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p>{owner&&<button className="sm" onClick={()=>delItem('announcements',a.id)}>✕</button>}</div>)}</Item>}
@@ -133,31 +135,36 @@ export default function App(){
 
  const Bills=()=>{const key=String(r[0]),pub=B.find(x=>x.id===key)||{},dr=owner?BD.find(x=>x.id===key):null,b=dr?{...pub,...dr}:pub,isDraft=!!dr,ps=b.ps??r[0],pe=b.pe??r[1]-864e5,rg=[ps,pe+864e5],days=Math.max(1,Math.round((rg[1]-rg[0])/864e5)),rangeH=days*24;
   const dc=sp.cfg||{},cfg=b.final?(b.finalCfg||{pct:b.pct??25,fixed:b.fixed||[]}):{pct:b.pct??dc.basePct??25,fixed:b.fixed??dc.fixedIds??[]},fx=cfg.fixed.filter(id=>members.some(m=>m.id===id)),nf=fx.length;
-  const hm=members.map(m=>({...m,h:b.final?.[m.id]??hrs(m.id,PX,X,rg)})),T=hm.reduce((t,m)=>t+m.h,0),ids=hm.map(m=>m.id),hh=hm.map(m=>m.h);
+  const useDays=!!b.useDays,raw=members.map(m=>hrs(m.id,PX,X,rg)),T0=raw.reduce((t,x)=>t+x,0),fh=h=>useDays?`${+(h/24).toFixed(2)} day${Math.abs(h/24-1)<1e-9?'':'s'}`:dur(h),hm=members.map((m,i)=>({...m,h:b.final?.[m.id]??(useDays?(+b.mdays?.[m.id]||0)*24:raw[i])})),T=hm.reduce((t,m)=>t+m.h,0),ids=hm.map(m=>m.id),hh=hm.map(m=>m.h);
   const E=shares(b.elec||0,ids,hh,fx,cfg.pct),W=shares(b.water||0,ids,hh,fx,cfg.pct),tot=(b.elec||0)+(b.water||0),bref=doc(db,'spaces',sp.id,'bills',key),dref=doc(db,'spaces',sp.id,'billDrafts',key);
-  const dueTs=b.due??+new Date(new Date(pe).getFullYear(),new Date(pe).getMonth()+1,dc.dueDay||5),left=daysLeft(dueTs),overdue=left<0;
+  const dfDue=defDue(pe,dc.dueDay),dueTs=b.due??dfDue,left=daysLeft(dueTs),overdue=left<0;
   const pool=E.rest+W.rest,rate=T>0?pool/T:0,RC=R.filter(x=>x.cyc===key),myRc=RC.find(x=>x.uid===u.uid);
   const npend=X.filter(x=>x.status==='pending'&&(([a,z])=>a<rg[1]&&z>=rg[0])(xr(x))).length,live=!b.final&&members.some(m=>last(m.id)?.type==='in');
   const submit=async ev=>{ev.preventDefault();const g=new FormData(ev.target),pv=g.get('p'),nd=g.get('d')?s2d(g.get('d')):null;
-   const nb={elec:+g.get('e')||0,water:+g.get('w')||0,ps:s2d(g.get('s')),pe:s2d(g.get('x')),pct:pv===''||pv==null?25:Math.min(100,Math.max(0,+pv||0)),fixed:g.getAll('f'),due:nd};
+   // only values that DIFFER from the Settings defaults are stored as custom, so changing a default in Settings reaches every bill that did not override it
+   const dpc=dc.basePct??25,npc=pv===''||pv==null?dpc:Math.min(100,Math.max(0,+pv||0)),nfx=g.getAll('f'),dueCustom=!!nd&&d2s(nd)!==d2s(dfDue),cfgCustom=npc!==dpc||!sameSet(nfx,dc.fixedIds||[]);
+   const nps=s2d(g.get('s')),npe=s2d(g.get('x')),nDays=Math.max(1,Math.round((npe+864e5-nps)/864e5)),ud=g.has('ud'),md=Object.fromEntries(members.map(m=>[m.id,Math.min(nDays,Math.max(0,+g.get('md_'+m.id)||0))]));
+   const nb={elec:+g.get('e')||0,water:+g.get('w')||0,ps:nps,pe:npe,pct:cfgCustom?npc:null,fixed:cfgCustom?nfx:null,cfgCustom,due:dueCustom?nd:null,dueCustom,useDays:ud,mdays:md};
    try{await setDoc(dref,{...nb,savedAt:Date.now()});say('Draft saved. Check it, then send it to your dormmates.',4000);buzz()}catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',6000)}};
   const sendBills=async()=>{if(!dr)return;if(!(dr.elec||dr.water))return say('Enter an amount first.');if(!confirm('Send these bills to all dormmates? They will see their share right away.'))return;
-   try{await setDoc(bref,{elec:dr.elec||0,water:dr.water||0,ps:dr.ps,pe:dr.pe,pct:dr.pct,fixed:dr.fixed||[],due:dr.due??deleteField(),sentAt:Date.now()},{merge:true});await deleteDoc(dref);ping({sid:sp.id,kind:'bills',id:key});buzz();say('Bills sent to your dormmates 📨',4000)}catch(e){say('Failed: '+e.message,6000)}};
+   try{const nul=v=>v==null?deleteField():v;   // the deadline is always saved on the sent bill so due-date reminders work
+    await setDoc(bref,{elec:dr.elec||0,water:dr.water||0,ps:dr.ps,pe:dr.pe,pct:nul(dr.pct),fixed:nul(dr.fixed),cfgCustom:!!dr.cfgCustom,due:dr.due??defDue(dr.pe,dc.dueDay),dueCustom:!!dr.dueCustom,useDays:!!dr.useDays,mdays:dr.useDays?(dr.mdays||{}):deleteField(),sentAt:Date.now()},{merge:true});await deleteDoc(dref);ping({sid:sp.id,kind:'bills',id:key});buzz();say('Bills sent to your dormmates 📨',4000)}catch(e){say('Failed: '+e.message,6000)}};
   const discard=()=>confirm('Discard this draft? The last sent bills (if any) stay as they were.')&&deleteDoc(dref).then(()=>say('Draft discarded'));
-  const csv=()=>{const rows=[['Name','Hours','Share of hours %','Fixed group','Base','Usage','Electric','Water','Total','Paid'],...hm.map((m,i)=>{const a=E.amounts[i],w=W.amounts[i];return[m.n,m.h.toFixed(2),(T?m.h/T*100:100/hm.length).toFixed(1),fx.includes(m.id)?'yes':'no',(a.base+w.base).toFixed(2),(a.use+w.use).toFixed(2),a.total.toFixed(2),w.total.toFixed(2),(a.total+w.total).toFixed(2),b.paid?.[m.id]?'yes':'no']})],a=document.createElement('a');
+  const csv=()=>{const rows=[['Name',useDays?'Days':'Hours','Share %','Fixed group','Base','Usage','Electric','Water','Total','Paid'],...hm.map((m,i)=>{const a=E.amounts[i],w=W.amounts[i];return[m.n,(useDays?m.h/24:m.h).toFixed(2),(T?m.h/T*100:100/hm.length).toFixed(1),fx.includes(m.id)?'yes':'no',(a.base+w.base).toFixed(2),(a.use+w.use).toFixed(2),a.total.toFixed(2),w.total.toFixed(2),(a.total+w.total).toFixed(2),b.paid?.[m.id]?'yes':'no']})],a=document.createElement('a');
    a.href=URL.createObjectURL(new Blob([rows.map(x=>x.map(c=>`"${c}"`).join(',')).join('\n')],{type:'text/csv'}));a.download=`dormmates-bills-${d2s(ps)}.csv`;a.click()};
   const finalize=async()=>{if(isDraft)return say('Send or discard the draft first.');if(b.final){if(!confirm('Reopen this cycle? Receipts already created for it will be deleted.'))return;await Promise.all(RC.map(x=>deleteDoc(doc(db,'spaces',sp.id,'receipts',x.id))));
     return setDoc(bref,{final:deleteField(),finalCfg:deleteField(),finalAt:deleteField(),receiptsAt:deleteField()},{merge:true})}
    await setDoc(bref,{final:Object.fromEntries(hm.map(m=>[m.id,m.h])),finalCfg:{pct:cfg.pct,fixed:fx},finalAt:Date.now()},{merge:true});ping({sid:sp.id,kind:'final',id:key});say('Finalized 🔒 Now you can send receipts')};
   const makeReceipts=async()=>{try{say('Creating receipts…');const bt=writeBatch(db),now=Date.now();
-   hm.forEach((m,i)=>{const a=E.amounts[i],w=W.amounts[i];bt.set(doc(db,'spaces',sp.id,'receipts',`${key}_${m.id}`),{uid:m.id,name:m.n,cyc:key,space:sp.name,host:nm(sp.ownerId),ps,pe,days,hours:+m.h.toFixed(4),totalHours:+T.toFixed(4),elec:b.elec||0,water:b.water||0,pct:cfg.pct,nFixed:nf,inFixed:fx.includes(m.id),
-     eBase:a.base,eUse:a.use,wBase:w.base,wUse:w.use,poolEBase:E.base,poolEUse:E.rest,poolWBase:W.base,poolWUse:W.rest,total:+(a.total+w.total).toFixed(2),daily:daily(iv(m.id,PX,X,rg),rg).map(v=>+v.toFixed(2)),due:dueTs,issuedAt:now})});
+   hm.forEach((m,i)=>{const a=E.amounts[i],w=W.amounts[i];bt.set(doc(db,'spaces',sp.id,'receipts',`${key}_${m.id}`),{uid:m.id,name:m.n,cyc:key,space:sp.name,host:nm(sp.ownerId),ps,pe,days,hours:+m.h.toFixed(4),totalHours:+T.toFixed(4),useDays,elec:b.elec||0,water:b.water||0,pct:cfg.pct,nFixed:nf,inFixed:fx.includes(m.id),
+     eBase:a.base,eUse:a.use,wBase:w.base,wUse:w.use,poolEBase:E.base,poolEUse:E.rest,poolWBase:W.base,poolWUse:W.rest,total:+(a.total+w.total).toFixed(2),daily:useDays?[]:daily(iv(m.id,PX,X,rg),rg).map(v=>+v.toFixed(2)),due:dueTs,issuedAt:now})});
    bt.update(bref,{receiptsAt:now});await bt.commit();ping({sid:sp.id,kind:'receipts',id:key});buzz();say('Receipts sent to every member 🧾',4000)}catch(e){say('Failed: '+e.message,6000)}};
   const dl=dlR,view=(list,i=0)=>setRv({list,i});
   const nudge=()=>{ping({sid:sp.id,kind:'remindunpaid',id:key});say('Reminder sent to unpaid members 🔔')};
   return <List><Cycle off={off} set={setOff} d={cd}/>
-   <Item className="card hero" data-tour="bills"><span className="mut">Pay by {dayAt(dueTs,0).toLocaleDateString([],{month:'long',day:'numeric'})}{!b.due&&owner?' · default, change it in Settings':''}</span><div className="big">{overdue?<>Overdue<small> {-left} day{left===-1?'':'s'}</small></>:left===0?'Due today':<><Num v={left} d={0}/><small> day{left===1?'':'s'} left</small></>}</div>
+   <Item className="card hero" data-tour="bills"><span className="mut">Pay by {dayAt(dueTs,0).toLocaleDateString([],{month:'long',day:'numeric'})}{owner&&!b.dueCustom?' · default from Settings':''}</span><div className="big">{overdue?<>Overdue<small> {-left} day{left===-1?'':'s'}</small></>:left===0?'Due today':<><Num v={left} d={0}/><small> day{left===1?'':'s'} left</small></>}</div>
     <p className="mut">{days} days · {d2s(ps)} to {d2s(pe)}{tot?` · ${peso(tot/days)} per day`:''}{b.final?' · 🔒 finalized':''}</p></Item>
+   {owner&&!b.final&&T0===0&&!useDays&&<div className="warn">No hours were recorded for this period, so the bill would be split equally. To split it by how many days each person was in the dorm, tick “Calculate by days” in the form below and enter their days.</div>}
    {npend>0&&!b.final&&<div className="warn">{npend} fix request{npend>1?'s':''} still pending in this period. Totals will change once approved.</div>}
    {live&&tot>0&&<div className="warn">Someone is still timed in, so their hours keep counting until they time out. Finalize after everyone is out.</div>}
    {owner&&isDraft&&<Item className="card draft"><h3>📝 Draft · not sent yet</h3><p className="mut" style={{marginBottom:12}}>Only you can see this. Check the hours and amounts below. When they look right, send the bills to your dormmates.{pub.sentAt?' The last version you sent stays visible to them until you send this one.':''}</p>
@@ -165,22 +172,25 @@ export default function App(){
    {owner&&!isDraft&&tot>0&&<p className="mut" style={{margin:'0 4px 12px'}}>✅ Sent to dormmates{b.sentAt?' · '+fmt(b.sentAt):''}</p>}
    {tot>0&&<Item><h3>How shares are computed</h3>
     <div className="row sp"><span className="mut">Period</span><b>{days} days · {rangeH}h</b></div>
-    <div className="row sp" style={{marginTop:6}}><span className="mut">Hours in the dorm (everyone)</span><b>{dur(T)}</b></div>
+    <div className="row sp" style={{marginTop:6}}><span className="mut">{useDays?'Days in the dorm (everyone, added up)':'Hours in the dorm (everyone)'}</span><b>{fh(T)}</b></div>
     {nf?<><div className="row sp" style={{marginTop:10}}><span className="mut">① Base pool · {cfg.pct}%</span><b>{peso(E.base+W.base)}</b></div>
      <p className="mut" style={{margin:'2px 0 0'}}>Split equally among {nf} fixed member{nf>1?'s':''} → {peso((E.base+W.base)/nf)} each</p>
      <div className="row sp" style={{marginTop:10}}><span className="mut">② Usage pool · {100-cfg.pct}%</span><b>{peso(pool)}</b></div>
-     <p className="mut" style={{margin:'2px 0 0'}}>Split by hours among everyone → {T?peso(rate)+' per hour':'equal split (no hours logged yet)'}</p></>
-    :<><div className="row sp" style={{marginTop:6}}><span className="mut">Rate per dorm hour</span><b>{T?peso(rate):'–'}</b></div>
-     <p className="mut" style={{marginTop:10}}>No fixed members selected, so 100% of the bill is split by actual hours. Each person pays the rate × their hours.</p></>}</Item>}
+     <p className="mut" style={{margin:'2px 0 0'}}>Split by hours among everyone → {T?peso(useDays?rate*24:rate)+(useDays?' per day':' per hour'):'equal split (nothing logged yet)'}</p></>
+    :<><div className="row sp" style={{marginTop:6}}><span className="mut">{useDays?'Rate per dorm day':'Rate per dorm hour'}</span><b>{T?peso(useDays?rate*24:rate):'–'}</b></div>
+     <p className="mut" style={{marginTop:10}}>No fixed members selected, so 100% of the bill is split by actual hours. Each person pays the rate × their {useDays?'days':'hours'}.</p></>}</Item>}
    {owner&&(b.final?<Item><span className="mut">🔒 This cycle is finalized. Reopen it to change amounts, dates or the fixed group.</span></Item>
-    :<Item><h3>Calculate this period's bills</h3><form key={key+tot+ps+pe+(b.due||'')+(b.pct??'')+fx.join()+(dr?.savedAt||'')} onSubmit={submit}><label>Electric bill (₱)</label><input name="e" type="number" step="any" inputMode="decimal" defaultValue={b.elec||''}/><label>Water bill (₱)</label><input name="w" type="number" step="any" inputMode="decimal" defaultValue={b.water||''}/>
+    :<Item><h3>Calculate this period's bills</h3><form key={key+tot+ps+pe+(b.due||'')+(b.pct??'')+fx.join()+useDays+(dr?.savedAt||'')} onSubmit={submit}><label>Electric bill (₱)</label><input name="e" type="number" step="any" inputMode="decimal" defaultValue={b.elec||''}/><label>Water bill (₱)</label><input name="w" type="number" step="any" inputMode="decimal" defaultValue={b.water||''}/>
     <label>Period starts</label><input name="s" type="date" defaultValue={d2s(ps)} required/><label>Period ends</label><input name="x" type="date" defaultValue={d2s(pe)} required/>
-    <label>Payment deadline</label><input name="d" type="date" defaultValue={b.due?d2s(b.due):''}/>
+    <label>Payment deadline</label><input name="d" type="date" defaultValue={d2s(dueTs)}/><p className="mut" style={{margin:'-6px 0 10px'}}>{b.dueCustom?'Custom deadline for this bill.':`Default from Settings (the ${dc.dueDay||5}th). Leave it to follow the default, or pick another date for this bill only.`}</p>
     <label>Base contribution (% of each bill, split equally)</label><input name="p" type="number" min="0" max="100" step="any" inputMode="decimal" defaultValue={cfg.pct}/>
     <label>Who pays the base contribution?</label>{members.map(m=><label key={m.id} className="chk"><input type="checkbox" name="f" value={m.id} defaultChecked={fx.includes(m.id)}/>{m.n}</label>)}
-    <p className="mut" style={{margin:'4px 0 12px'}}>Leave everyone unchecked to split the whole bill by actual hours.</p><p className="mut" style={{margin:'0 0 10px'}}>This only saves a private draft. Nothing is sent to your dormmates until you tap “Send to dormmates”.</p><button className="pri w">Save draft & calculate</button></form></Item>)}
+    <p className="mut" style={{margin:'4px 0 12px'}}>Leave everyone unchecked to split the whole bill by actual hours.</p>
+    <div className="note" style={{margin:'6px 0 12px'}}><label className="chk" style={{padding:0}}><input type="checkbox" name="ud" defaultChecked={b.useDays??T0===0}/>Calculate by days in the dorm instead of hours</label>
+     <p className="mut" style={{margin:'4px 0 8px'}}>Use this for a period that already passed with no punches. Enter how many of the {days} days each person was in the dorm.</p>
+     {members.map(m=><div key={m.id} className="row sp" style={{marginBottom:6}}><span>{m.n}</span><input name={'md_'+m.id} type="number" min="0" max={days} step="any" inputMode="decimal" placeholder="days" defaultValue={b.mdays?.[m.id]??''} style={{width:90,margin:0}}/></div>)}</div><p className="mut" style={{margin:'0 0 10px'}}>This only saves a private draft. Nothing is sent to your dormmates until you tap “Send to dormmates”.</p><button className="pri w">Save draft & calculate</button></form></Item>)}
    {tot?<>{hm.map((m,i)=>{const s=T?m.h/T:1/hm.length,pd=b.paid?.[m.id],a=E.amounts[i],w=W.amounts[i],baseS=a.base+w.base,useS=a.use+w.use;
-    return <Item key={m.id}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{fx.includes(m.id)&&<span className="tag t-pending" style={{marginLeft:6}}>fixed</span>}{!pd&&overdue&&<span className="tag t-denied" style={{marginLeft:6}}>overdue</span>}<div className="mut">{dur(m.h)} of {dur(T)} · {(s*100).toFixed(1)}%</div></div><div className="big" style={{fontSize:24}}>{peso(a.total+w.total)}</div></div>
+    return <Item key={m.id}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{fx.includes(m.id)&&<span className="tag t-pending" style={{marginLeft:6}}>fixed</span>}{!pd&&overdue&&<span className="tag t-denied" style={{marginLeft:6}}>overdue</span>}<div className="mut">{fh(m.h)} of {fh(T)} · {(s*100).toFixed(1)}%</div></div><div className="big" style={{fontSize:24}}>{peso(a.total+w.total)}</div></div>
     <div className="mut" style={{marginTop:8}}>{nf?`Base ${peso(baseS)} + Usage ${peso(useS)}`:`By hours: ${peso(useS)}`}</div>
     <div className="row sp mut" style={{marginTop:6}}><span>⚡ {peso(a.total)}</span><span>💧 {peso(w.total)}</span>{owner&&!isDraft?<button className={`sm ${pd?'ok':''}`} onClick={()=>updateDoc(bref,{['paid.'+m.id]:!pd}).then(()=>{if(!pd)ping({sid:sp.id,kind:'paid',id:key,target:m.id})})}>{pd?'Paid ✓':'Mark paid'}</button>:pd&&<span className="tag t-approved">Paid</span>}</div></Item>})}
     <Item><div className="row sp"><span className="mut">Total billed</span><b>{peso(tot)}</b></div><p className="mut" style={{marginTop:6}}>Cents are allocated so the shares add up exactly to the bill.</p>
@@ -205,13 +215,14 @@ export default function App(){
   <AnimatePresence>{menu&&<Sheet key={menu} close={()=>setMenu(null)}>
    {(menu==='punch'||menu==='away')&&<><h2>{menu==='away'?"Confirm you're still away":`Time ${on?'out':'in'}`}</h2><p className="mut" style={{margin:'6px 0 16px'}}>Add proof so your dormmates know it's real.</p>
     <input id="cam" type="file" accept="image/*" capture="user" hidden onChange={e=>photo(e.target.files[0],menu==='away'?'away':undefined)}/>
-    <button className="pri w" style={{marginBottom:8}} onClick={()=>document.getElementById('cam').click()}>📸 Take a picture</button><button className="w" onClick={()=>loc(menu==='away'?'away':undefined)}>📍 Send my location</button></>}
+    <button className="pri w" style={{marginBottom:8}} onClick={()=>setCam(menu==='away'?'away':'punch')}>📸 Take a picture</button><button className="w" onClick={()=>loc(menu==='away'?'away':undefined)}>📍 Send my location</button></>}
    {menu==='spaces'&&<><h2 style={{marginBottom:12}}>Your spaces</h2>{spaces.map(s=><button key={s.id} className={`sp-row ${s.id===sp.id?'cur':''}`} onClick={()=>open(s.id)}><div style={{flex:1}}><b>{s.name}</b><div className="mut">{s.members.length} members{s.ownerId===u.uid?' · you are host':''}</div></div>{s.id===sp.id&&'✓'}</button>)}
     <div className="card row sp" style={{marginTop:12}}><div><div className="mut">Invite code</div><b style={{fontSize:22,letterSpacing:2}}>{sp.code}</b></div><button className="sm" onClick={()=>navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'))}>Copy</button></div>
     <SpaceForm u={u} open={open} say={say}/></>}
   </Sheet>}</AnimatePresence>
   <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
   {tourEl}
+  {cam&&<Cam onShot={d=>{const t=cam==='away'?'away':undefined;setCam(null);save({photo:d},t)}} onClose={()=>setCam(null)} onFallback={()=>{setCam(null);document.getElementById('cam')?.click()}}/>}
   {owner&&sp.cycleSet===false&&!tour&&<CycleSetup sp={sp} say={say}/>}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>

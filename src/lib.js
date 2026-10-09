@@ -59,7 +59,8 @@ export const hrs=(uid,P,X,r)=>iv(uid,P,X,r).reduce((t,[b,c])=>t+c-b,0)/36e5;
 export function daily(ivs,[s,e]){const d=[];for(let i=0;+dayAt(s,i)<e;i++){const a=+dayAt(s,i),z=+dayAt(s,i+1);d.push(ivs.reduce((t,[b,c])=>t+Math.max(0,Math.min(c,z)-Math.max(b,a)),0)/36e5)}return d}
 // a session that crosses 12AM of the 14th stays one session; each cycle only counts its own part
 export const sessions=(uid,P,X,[s,e])=>pairs(uid,P,X).filter(x=>x.a<e&&x.b>s).map(x=>({...x,uid,ca:Math.max(x.a,s),cb:Math.min(x.b,e),before:x.a<s,after:x.b>e})).sort((x,y)=>y.a-x.a);
-export const shrink=f=>new Promise(res=>{const im=new Image();im.onload=()=>{const s=720/Math.max(im.width,im.height,720),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.6))};im.src=URL.createObjectURL(f)});
+// mirror=true flips the picture left/right (selfie / front camera look)
+export const shrink=(f,mirror=false)=>new Promise(res=>{const im=new Image();im.onload=()=>{const s=720/Math.max(im.width,im.height,720),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;const x=c.getContext('2d');if(mirror){x.translate(c.width,0);x.scale(-1,1)}x.drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.6))};im.src=URL.createObjectURL(f)});
 
 // Bill split. `pct`% of the bill is the base pool, split equally among the `fixed` members only.
 // The rest is split by actual hours among EVERYONE. No fixed members selected -> 100% by hours.
@@ -95,3 +96,9 @@ export function fixCheck(uid,P,kind,T,now=Date.now()){
 export const manilaDay=(t=Date.now())=>new Date(t).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
 // whole calendar days from TODAY (Manila) to the deadline date: 0 = due today, -1 = was due yesterday
 export const daysLeft=due=>Math.round((Date.parse(d2s(due))-Date.parse(manilaDay()))/864e5);
+
+// default payment deadline for a bill period that ends on `pe`: day `dueDay` of the following month
+export const defDue=(pe,dueDay)=>+new Date(new Date(pe).getFullYear(),new Date(pe).getMonth()+1,dueDay||5);
+// last day of the cycle that starts at `start`
+export const cycEndOf=start=>+new Date(new Date(+start).getFullYear(),new Date(+start).getMonth()+1,new Date(+start).getDate())-864e5;
+export const sameSet=(a=[],b=[])=>a.length===b.length&&a.every(x=>b.includes(x));
