@@ -1,5 +1,5 @@
 process.env.TZ='Asia/Manila';
-import {db,push,pushInfo} from './_lib.js';
+import {db,push,pushInfo,who,others} from './_lib.js';
 import {norm} from '../src/lib.js';
 
 // Called every 5 minutes by cron-job.org. It handles:
@@ -48,6 +48,15 @@ export default async function handler(req,res){
         if(!force)await d.ref.set({lastSent:{kind:k,at:Date.now(),devices:n}},{merge:true});
       }
     }
+
+    // 1b) 8:00-9:00 PM: tell the dorm about anyone who did not confirm they were away and was auto timed in
+    if(mins>=1200&&mins<1260){
+      for(const s of spaces.docs){const sp=s.data(),mem=sp.members||[];if(mem.length<2)continue;
+        const P=await punches(s);
+        for(const uid of mem){for(const e of norm(uid,P,Date.now()).filter(e=>e.auto&&Date.now()-e.ts<90*60e3)){
+          const ref=s.ref.collection('autoNotified').doc(`${uid}_${e.ts}`);if((await ref.get()).exists)continue;
+          await ref.set({at:Date.now()});   // claim first so it is never sent twice
+          await push(others(sp,uid),{title:`🏠 ${who(sp,uid)} was auto timed in`,body:`They did not confirm they were away before 8:00 PM, so they are counted as home.`,tag:'auto-'+uid+'-'+e.ts});out.auto=(out.auto||0)+1}}}}
 
     // 2) daily 9:00 AM: bill due + fix deadline reminders
     if(mins>=540&&mins<560){

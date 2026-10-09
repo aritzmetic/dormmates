@@ -27,9 +27,14 @@ export default async function handler(req,res){
 
     if(kind==='punch'){
       const{r,d}=await get('punches');
-      if(!d||d.uid!==uid||!['in','out'].includes(d.type)||!fresh(d.ts)||d.pushed)return skip();
+      if(!d||d.uid!==uid||!['in','out','away'].includes(d.type)||!fresh(d.ts)||d.pushed)return skip();
       await r.update({pushed:true});to=others(sp,uid);
-      msg={title:`${d.type==='in'?'🟢':'🔴'} ${sp.name}`,body:`${who(sp,uid)} timed ${d.type} at ${tf(d.ts)}`,tag:'punch-'+id};
+      const proof=d.photo?'with a photo':d.loc?'with their location':'';
+      msg=d.type==='away'
+        ?{title:`📍 ${who(sp,uid)} is still away`,body:`Confirmed at ${tf(d.ts)}${proof?' '+proof:''}. They will not be auto timed in tonight.`,tag:'away-'+id}
+        :d.type==='in'
+        ?{title:`🏠 ${who(sp,uid)} is home`,body:`Timed in at ${tf(d.ts)}${proof?' '+proof:''}.`,tag:'punch-'+id}
+        :{title:`🚪 ${who(sp,uid)} is out`,body:`Timed out at ${tf(d.ts)}${proof?' '+proof:''}.`,tag:'punch-'+id};
     }
     else if(kind==='note'){
       const{r,d}=await get('notes');
@@ -83,6 +88,13 @@ export default async function handler(req,res){
       await r.update({nudgeAt:Date.now()});
       to=(sp.members||[]).filter(m=>m!==uid&&!d.paid?.[m]);
       msg={title:'💡 Friendly bill reminder',body:`${sp.name}: you still have an unpaid bill${d.due?` (pay by ${dd(d.due)})`:''}. Open the app to see your share.`,tag:'nudge-'+id};
+    }
+    else if(kind==='billupd'){
+      // host changed the default deadline / base contribution and existing bills were updated
+      const{r,d}=await get('bills');
+      if(!owner||!d||!d.updAt||!fresh(d.updAt)||d.updNotified===d.updAt)return skip();
+      await r.update({updNotified:d.updAt});to=others(sp,uid);
+      msg={title:'📅 Bill settings updated',body:cut(String(req.body?.text||'The host updated your bill settings.'),160),tag:'billupd-'+id};
     }
     else if(kind==='remset'){
       // confirmation that the person's reminders were saved; goes through the same push path as every other notification
