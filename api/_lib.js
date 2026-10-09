@@ -12,10 +12,12 @@ export const who=(sp,uid)=>(sp.names?.[uid]?.n||'Someone').split(' ')[0];
 export const others=(sp,uid)=>(sp.members||[]).filter(m=>m!==uid);
 
 // send a push to every phone registered by these users
+export const pushInfo={tokens:0,ok:0,failed:0,errors:[]};
 export async function push(uids,{title,body,tag}){
   uids=[...new Set(uids)].filter(Boolean);if(!uids.length)return 0;let okN=0;
   const docs=[];
   for(let i=0;i<uids.length;i+=30){const q=await db.collection('tokens').where('uid','in',uids.slice(i,i+30)).get();docs.push(...q.docs)}
+  pushInfo.tokens=docs.length;pushInfo.ok=0;pushInfo.failed=0;pushInfo.errors=[];
   console.log(`push "${title}" -> ${uids.length} user(s), ${docs.length} device token(s)`);
   if(!docs.length)console.warn('No tokens: those users must open the app and tap Profile > Enable reminders on their phone.');
   for(let i=0;i<docs.length;i+=500){
@@ -26,8 +28,8 @@ export async function push(uids,{title,body,tag}){
       webpush:{headers:{Urgency:'high',TTL:'3600'}},
       android:{priority:'high'}
     });
-    console.log(`sent ok:${r.successCount} failed:${r.failureCount}`);okN+=r.successCount;
-    r.responses.forEach((x,k)=>{const c=x.error?.code;if(c)console.warn('push error',c);
+    console.log(`sent ok:${r.successCount} failed:${r.failureCount}`);okN+=r.successCount;pushInfo.ok+=r.successCount;pushInfo.failed+=r.failureCount;
+    r.responses.forEach((x,k)=>{const c=x.error?.code;if(c){console.warn('push error',c);pushInfo.errors.push(c)}
       if(c==='messaging/registration-token-not-registered'||c==='messaging/invalid-registration-token')part[k].ref.delete()});
   }
   return okN;
