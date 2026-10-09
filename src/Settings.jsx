@@ -112,7 +112,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
 
   <Item className="card row"><Av m={{n:u.displayName||'Me',p:u.photoURL||''}}/><div style={{flex:1,minWidth:0}}><b>{u.displayName||'Me'}</b><div className="mut" style={{overflow:'hidden',textOverflow:'ellipsis'}}>{u.email}</div><div className="mut">{owner?'Host':'Member'} of {sp.name}</div></div></Item>
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="set-space">
    <Acc id="space" open={open} set={setOpen} icon="🏠" title="Space" sub={`${sp.name} · ${members.length} member${members.length>1?'s':''} · cycle starts day ${cd}`}>
     {hostOnly}
     <fieldset disabled={!owner}><form key={sp.name+cd} onSubmit={saveSpace}>
@@ -134,7 +134,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
     {owner&&<button className="w" style={{color:'var(--bad)'}} onClick={delSpace}>🗑 Delete this space for everyone</button>}
    </Acc></Item>
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="set-fixes">
    <Acc id="fixes" open={open} set={setOpen} icon="📝" title="Fix request rules" sub={`${cfg.hostAuto!==false?'Host fixes auto-approved · ':''}${back} · max ${cfg.fixMaxDays||31} days per request`}>
     {hostOnly}
     <fieldset disabled={!owner}><form key={JSON.stringify(cfg)} onSubmit={saveFix}>
@@ -146,7 +146,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      {owner&&<button className="pri w">Save fix rules</button>}</form></fieldset>
    </Acc></Item>
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="set-bills">
    <Acc id="bills" open={open} set={setOpen} icon="💡" title="Bill defaults" sub={`Base ${pct}% · ${cfg.fixedIds?.length?cfg.fixedIds.length+' fixed member'+(cfg.fixedIds.length>1?'s':''):'no fixed group'} · due on the ${ord(due)}`}>
     {hostOnly}
     <fieldset disabled={!owner}><form key={JSON.stringify([cfg.basePct,cfg.fixedIds,cfg.dueDay])+members.length} onSubmit={saveBills}>
@@ -179,25 +179,25 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
     <p className="mut">Saved on this phone. “System” switches automatically with your phone's setting.</p>
    </Acc></Item>
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="help">
    <Acc id="help" open={open} set={setOpen} icon="❓" title="Help" sub="Replay the How-To guide">
     <p className="mut" style={{marginBottom:10}}>Take the page-by-page tour of the app again whenever you like.</p>
     <button className="pri w" onClick={replayTour}>▶ Play the How-To guide</button>
    </Acc></Item>
 
-  {owner&&<Item className="acc-wrap">
+  {owner&&<Item className="acc-wrap" data-tour="host">
    <Acc id="host" open={open} set={setOpen} icon="📣" title="Host tools" sub="Send a message to everyone">
     <p className="mut" style={{marginBottom:8}}>Your message is sent as a push notification to every member and shown in the Dorm tab.</p>
     <input placeholder="e.g. Water will be off at 3 PM" maxLength={140} value={an} onChange={e=>setAn(e.target.value)}/><button className="pri w" disabled={!an.trim()} onClick={sendAn}>Send notification</button>
    </Acc></Item>}
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="data">
    <Acc id="data" open={open} set={setOpen} icon="📦" title="Export data" sub={`Current cycle · ${cycLabel(r)}`}>
     <p className="mut" style={{marginBottom:10}}>Download spreadsheets (CSV) for the current cycle. {owner?'As host you get everyone.':'You get your own.'}</p>
     <button className="w" style={{marginBottom:8}} onClick={expHours}>⬇ Hours & sessions</button><button className="w" onClick={expReq}>⬇ Fix requests</button>
    </Acc></Item>
 
-  <Item className="acc-wrap">
+  <Item className="acc-wrap" data-tour="account">
    <Acc id="account" open={open} set={setOpen} icon="👤" title="Account" sub={u.email||'Signed in with Google'}>
     <button className="w" style={{marginBottom:8}} onClick={switchAcc}>🔄 Switch account</button><button className="w" style={{marginBottom:8}} onClick={()=>signOut(auth)}>Sign out</button>
     <button className="no w" onClick={delAcc}>Delete my account</button>

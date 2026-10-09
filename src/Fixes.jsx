@@ -159,10 +159,10 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
  return <><List><Cycle off={off} set={setOff} d={cd}/>
   {bb.final?<div className="warn">🔒 This cycle is finalized. Hours are locked, so no new fix requests.</div>
    :bb.fixDue?<div className="warn">{lock?`🔒 Fix requests closed on ${fmt(bb.fixDue)}. This cycle is locked.`:`⏳ Fix requests close ${fmt(bb.fixDue)}. Send yours before then.`}</div>:null}
-  {owner&&!bb.final&&<Item><h3>⏳ Fix deadline</h3><p className="mut" style={{marginBottom:8}}>After this time, nobody can send new fix requests for this cycle.</p>
+  {owner&&!bb.final&&<Item data-tour="fixdl"><h3>⏳ Fix deadline</h3><p className="mut" style={{marginBottom:8}}>After this time, nobody can send new fix requests for this cycle.</p>
    <form key={r[0]+'-'+(bb.fixDue||'')} onSubmit={saveFx}><input name="fx" type="datetime-local" defaultValue={bb.fixDue?iso(bb.fixDue):''}/><div className="row"><button className="pri" style={{flex:1}}>Save deadline</button>{bb.fixDue&&<button type="button" style={{flex:1}} onClick={clearFx}>Remove</button>}</div></form></Item>}
   {!owner&&X.some(x=>x.uid===u.uid&&x.status==='suggested'&&!lockedX(x))&&<div className="warn">💡 {nm(sp.ownerId)} suggested a correction to your hours. Scroll to Requests to accept or decline it.</div>}
-  {owner&&<Item><h3>🔍 Counter-check</h3><p className="mut" style={{marginBottom:10}}>See anyone's punches and suggest a time in / out. Your suggestion only counts after that member accepts it.</p>
+  {owner&&<Item data-tour="counter"><h3>🔍 Counter-check</h3><p className="mut" style={{marginBottom:10}}>See anyone's punches and suggest a time in / out. Your suggestion only counts after that member accepts it.</p>
    <div className="fchips" style={{paddingBottom:0}}>{members.map(m=><button key={m.id} className={`fchip ${tu===m.id?'on':''}`} onClick={()=>{setVu(m.id);setDy(null);setEf(null)}}>{m.id===u.uid?'Me':m.n.split(' ')[0]}</button>)}</div>
    {(()=>{const ev=[...norm(tu,P),...P.filter(p=>p.uid===tu&&p.type==='away')].filter(p=>p.ts>=r[0]&&p.ts<r[1]).sort((a,b)=>b.ts-a.ts);
     return <><p className="mut" style={{margin:'12px 0 4px'}}>{nm(tu)} · {ev.length} punch{ev.length===1?'':'es'} this cycle</p>

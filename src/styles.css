@@ -136,9 +136,15 @@ select{color:var(--ink)}
 .tour-block{position:fixed;inset:0;z-index:60}
 .tour-dim{position:fixed;inset:0;background:#000b;z-index:60;pointer-events:none}
 .tour-hl{position:fixed;z-index:61;border-radius:18px;border:2px solid var(--lamp);box-shadow:0 0 0 9999px #000b;pointer-events:none;transition:all .28s ease}
-.tour-card{position:fixed;left:12px;right:12px;max-width:520px;margin:auto;z-index:62;background:var(--card);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:0 20px 60px #0007}
-.tour-card h3{font-size:20px;margin:2px 0 6px}.tour-ic{font-size:30px}
-.tour-dots{display:flex;gap:5px;margin:0 0 12px}.tour-dots i{height:5px;flex:1;border-radius:4px;background:var(--line)}.tour-dots i.on{background:var(--lamp)}
+.tour-card{position:fixed;left:12px;right:12px;max-width:520px;margin:auto;z-index:62;background:var(--card);border:1px solid var(--line);border-radius:24px;padding:16px 18px 14px;max-height:64vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px #0007}
+.tour-card h3{font-size:19px;margin:0;line-height:1.2}.tour-ic{font-size:28px}
+.tour-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}.tour-foot{padding-top:10px;border-top:1px solid var(--line)}
+.tour-bar{height:5px;border-radius:4px;background:var(--line);margin:0 0 12px;overflow:hidden}.tour-bar i{display:block;height:100%;border-radius:4px;background:var(--lamp);transition:width .25s ease}
+.tour-pg{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.tour-who{font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--soft2);color:var(--mut)}.tour-who.host{background:#ffc24b33;color:var(--lamp)}.tour-who.member{background:#8c91ff33;color:var(--peri)}
+.tour-b{margin:8px 0 10px;font-size:14px;color:var(--mut)}
+.tour-pts{list-style:none;margin:0 0 14px;padding:0}.tour-pts li{position:relative;padding-left:16px;margin:0 0 8px;font-size:14px;line-height:1.45}.tour-pts li::before{content:'';position:absolute;left:2px;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--lamp)}.tour-pts b{color:var(--ink)}
+.tour-link{background:none;padding:4px 2px;font-size:13px;font-weight:600;color:var(--mut);text-decoration:underline}
 
 /* ---------- in-app camera ---------- */
 .cam{position:fixed;inset:0;z-index:70;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center}
