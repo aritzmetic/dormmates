@@ -13,7 +13,7 @@ export const others=(sp,uid)=>(sp.members||[]).filter(m=>m!==uid);
 
 // send a push to every phone registered by these users
 export const pushInfo={tokens:0,ok:0,failed:0,errors:[]};
-export async function push(uids,{title,body,tag}){
+export async function push(uids,{title,body,tag,url}){
   uids=[...new Set(uids)].filter(Boolean);if(!uids.length)return 0;let okN=0;
   const docs=[];
   for(let i=0;i<uids.length;i+=30){const q=await db.collection('tokens').where('uid','in',uids.slice(i,i+30)).get();docs.push(...q.docs)}
@@ -24,7 +24,7 @@ export async function push(uids,{title,body,tag}){
     const part=docs.slice(i,i+500);
     const r=await messaging.sendEachForMulticast({
       tokens:part.map(d=>d.id),
-      data:{title,body,tag:tag||title,url:'/'},
+      data:{title,body,tag:tag||title,url:url||'/'},
       webpush:{headers:{Urgency:'high',TTL:'3600'}},
       android:{priority:'high'}
     });

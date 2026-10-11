@@ -102,3 +102,10 @@ export const defDue=(pe,dueDay)=>+new Date(new Date(pe).getFullYear(),new Date(p
 // last day of the cycle that starts at `start`
 export const cycEndOf=start=>+new Date(new Date(+start).getFullYear(),new Date(+start).getMonth()+1,new Date(+start).getDate())-864e5;
 export const sameSet=(a=[],b=[])=>a.length===b.length&&a.every(x=>b.includes(x));
+
+// distance in meters between two coordinates
+export const dist=(a,b,c,d)=>{const R=6371e3,r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+// reads coordinates from a pasted Google Maps link or "14.5995, 120.9842"
+export function parseLL(t){t=decodeURIComponent(String(t||''));
+ const m=t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)||t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)||t.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)[, ]+(-?\d+\.\d+)/)||t.match(/^\s*(-?\d+\.\d+)\s*[, ]\s*(-?\d+\.\d+)\s*$/);
+ return m?{la:m[1],ln:m[2]}:null}

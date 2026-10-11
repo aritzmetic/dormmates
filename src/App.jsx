@@ -13,6 +13,7 @@ import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
 import Cam from './Cam';
+import useGeofence from './useGeofence';
 
 // shown to the host right after a space is created: they must choose when the billing cycle starts
 function CycleSetup({sp,say}){const[day,setDay]=useState(14),[busy,setBusy]=useState(false);
@@ -28,7 +29,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
  const create=async()=>{if(!n.trim())return;const r=await addDoc(collection(db,'spaces'),{name:n.trim(),code:Math.random().toString(36).slice(2,8).toUpperCase(),ownerId:u.uid,members:[u.uid],names:{[u.uid]:me},cycleDay:14,cycleSet:false});setN('');open(r.id)};
  const join=async()=>{const q=await getDocs(query(collection(db,'spaces'),where('code','==',c.trim().toUpperCase()),limit(1)));if(q.empty)return say('No space with that code.');
   await updateDoc(q.docs[0].ref,{members:arrayUnion(u.uid),['names.'+u.uid]:me});setC('');open(q.docs[0].id)};
- return <><div className="card"><p className="mut" style={{marginBottom:10}}>A <b>space</b> is your dorm group. <b>Start a new one</b> if you are the host (you will get a 6-letter invite code to share), or <b>join</b> with the code the host gave you. A short How-To guide starts right after.</p></div><div className="card"><h3>Start a new space</h3><input placeholder="e.g. Room 304" value={n} onChange={e=>setN(e.target.value)}/><button className="pri w" onClick={create}>Create space</button></div>
+ return <><div className="card"><h3>Start a new space</h3><input placeholder="e.g. Room 304" value={n} onChange={e=>setN(e.target.value)}/><button className="pri w" onClick={create}>Create space</button></div>
   <div className="card"><h3>Join with a code</h3><input placeholder="6-letter code" value={c} onChange={e=>setC(e.target.value)}/><button className="w" onClick={join}>Join space</button></div></>}
 
 export default function App(){
@@ -53,7 +54,7 @@ export default function App(){
 
  useEffect(()=>{if(!u)return;const a=away(u.uid,PX);if(a?.open&&!localStorage.getItem('nf'+a.D)){localStorage.setItem('nf'+a.D,1);const t='Confirm you are still away before 8:00 PM or you will be timed in.';say('⏰ '+t,6000);notify('⏰ Confirm you are away',t)}});
  // guide: shown ONCE to everyone (new and existing) until they confirm; also remembered on this device
- useEffect(()=>{if(u&&PFL&&sp&&!(PF?.tourV>=TOUR_V)&&localStorage.getItem('tourV')!==String(TOUR_V))setTour(true)},[u?.uid,PFL,PF?.tourV,sp?.id]);
+ useEffect(()=>{if(u&&PFL&&!(PF?.tourV>=TOUR_V)&&localStorage.getItem('tourV')!==String(TOUR_V))setTour(true)},[u?.uid,PFL,PF?.tourV]);
  const doneTour=async()=>{localStorage.setItem('tourV',TOUR_V);setTour(false);setTab('home');setOff(0);try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,tourV:TOUR_V,tourAt:Date.now()},{merge:true})}catch{}};
  // reminder fallback: while the app is open, fire the reminder locally too (the server push covers a closed app)
  useEffect(()=>{if(!u||!PF||window.Notification?.permission!=='granted')return;const n=new Date(),mins=n.getHours()*60+n.getMinutes(),day=d2s(Date.now()),inside=norm(u.uid,PX).at(-1)?.type==='in';
@@ -61,6 +62,12 @@ export default function App(){
   [['in',PF.inOn,PF.inAt,true,'🟢 Time to time in',"You're not timed in yet. Open DormMate to punch in."],['out',PF.outOn,PF.outAt,true,'🔴 Time to time out',"You're still timed in. Open DormMate to punch out."]].forEach(([k,on_,at,need,t,b])=>{
    const[h,m]=String(at||'').split(':').map(Number),d=mins-(h*60+m);if(!on_||!Number.isFinite(d)||d<0||d>=10||localStorage.getItem('rl-'+k)===day)return;
    localStorage.setItem('rl-'+k,day);if(need)notify(t,b)})});
+ // dorm location (host sets it in Settings): while the app is open, alert when the user arrives / leaves
+ const [geoOn,setGeoOn_]=useState(localStorage.getItem('geoWatch')==='1'),setGeoOn=v=>{localStorage.setItem('geoWatch',v?'1':'0');setGeoOn_(v)};
+ const geoSt=useGeofence({geo:sp?.cfg?.geo,on:geoOn&&!!u,isIn:u?norm(u.uid,PX).at(-1)?.type==='in':false,onPrompt:(k,g,d)=>{
+  const t=k==='arrived'?`📍 You're at ${g.name||'the dorm'}`:`🚶 You're away from ${g.name||'the dorm'}`,b=k==='arrived'?'Want to time in?':'You are still timed in. Time out?';say(t+'\n'+b,8000);notify(t,b)}});
+ // opened from a "time in / time out?" notification
+ useEffect(()=>{if(!u||!sp)return;if(new URLSearchParams(location.search).get('punch')){history.replaceState(null,'',location.pathname);setTab('home');setMenu('punch')}},[u?.uid,sp?.id]);
  const orbs=<><div className="orb o1"/><div className="orb o2"/></>;
  if(!ready||(u&&!loaded))return <div className="login"><motion.div animate={{rotate:360}} transition={{repeat:Infinity,duration:1.4,ease:'linear'}} className="logo" style={{margin:'auto'}}><i/></motion.div></div>;
  if(!u)return <main>{orbs}<div className="login">
@@ -104,7 +111,7 @@ export default function App(){
   <button className={`w ${aw.open?'pri':''}`} disabled={!aw.open} onClick={()=>setMenu('away')}>{aw.open?"📍 I'm still away":'Opens at 7:30 PM'}</button></Item>;
  const Home=()=>{const ms=members.map(m=>({...m,h:H(m.id)})).sort((a,b)=>b.h-a.h),mx=Math.max(1,...ms.map(m=>m.h)),h=H(u.uid),home=members.filter(m=>last(m.id)?.type==='in').length;
   return <List>
-  <Item className="card hero" data-tour="hero"><Cycle off={off} set={setOff} d={cd}/><div className="chip"><span className="dot on" style={{margin:0}}/>{home} of {members.length} home</div>
+  <Item className="card hero" data-tour="hours"><Cycle off={off} set={setOff} d={cd}/><div className="chip"><span className="dot on" style={{margin:0}}/>{home} of {members.length} home</div>
    <div className="big"><Num v={Math.floor(h)} d={0}/><small>h {Math.round(h%1*60)}m</small></div><p className="mut">your total this cycle</p>
    {off===0&&<div className="stage" data-tour="punch"><div className={`ring ${on?'in':''}`}/>
     <motion.button whileTap={{scale:.92}} className={`punch ${on?'in':''}`} onClick={()=>{buzz();setMenu('punch')}}>{on?'Time out':'Time in'}<small>{on?clock(Date.now()-mine.ts):'tap to start'}</small></motion.button>
@@ -128,7 +135,7 @@ export default function App(){
   <Item data-tour="chart"><div className="row sp"><h3 style={{margin:0}}>{avg?'Average hours per day':'Hours per day'}</h3><span className="mut">{sel!=null&&dd[sel]!=null?`${dayAt(r[0],sel).toLocaleDateString([],{month:'short',day:'numeric'})}: ${dur(dd[sel])}`:'tap a bar'}</span></div>
    <div className="chart">{dd.map((v,i)=><div key={i} className="col" onClick={()=>setSel(i)}><motion.div className={`b ${sel===i?'sel':''}`} initial={{height:0}} animate={{height:Math.max(3,v/mx*100)+'%'}} transition={{delay:i*.015}}/><span>{i%5===0?dayAt(r[0],i).getDate():''}</span></div>)}</div>
    <p className="mut" style={{marginTop:8}}>{avg?`Average per member (${dds.length})`:nm(hf)+"'s total"}: <b style={{color:'var(--ink)'}}>{dur(dd.reduce((a,c)=>a+c,0))}</b></p></Item>
-  <h3 data-tour="log" style={{margin:'16px 0 10px'}}>Time logged</h3>
+  <h3 data-tour="sess" style={{margin:'16px 0 10px'}}>Time logged</h3>
   {S.map((s,i)=><Item key={i}><div className="row sp"><div><b>{nm(s.uid)}</b><div className="mut">{new Date(s.a).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})} · {tm(s.a)} → {s.live?'now':tm(s.b)}{s.fix||s.ip?.fix||s.op?.fix?' · approved fix':''}</div>
    {(s.before||s.after)&&<div className="mut">{s.before?'↩ started last cycle':'continues next cycle ↪'}</div>}</div><b style={{color:'var(--lamp)'}}>{dur((s.cb-s.ca)/36e5)}</b></div>{(s.ip||s.op)&&<div className="row" style={{marginTop:10}}>{proof(s.ip)}{proof(s.op)}</div>}</Item>)}
   {!S.length&&<Item><span className="mut">No time logged this cycle.</span></Item>}</List>};
@@ -167,10 +174,10 @@ export default function App(){
    {owner&&!b.final&&T0===0&&!useDays&&<div className="warn">No hours were recorded for this period, so the bill would be split equally. To split it by how many days each person was in the dorm, tick “Calculate by days” in the form below and enter their days.</div>}
    {npend>0&&!b.final&&<div className="warn">{npend} fix request{npend>1?'s':''} still pending in this period. Totals will change once approved.</div>}
    {live&&tot>0&&<div className="warn">Someone is still timed in, so their hours keep counting until they time out. Finalize after everyone is out.</div>}
-   {owner&&isDraft&&<Item className="card draft" data-tour="billdraft"><h3>📝 Draft · not sent yet</h3><p className="mut" style={{marginBottom:12}}>Only you can see this. Check the hours and amounts below. When they look right, send the bills to your dormmates.{pub.sentAt?' The last version you sent stays visible to them until you send this one.':''}</p>
+   {owner&&isDraft&&<Item className="card draft"><h3>📝 Draft · not sent yet</h3><p className="mut" style={{marginBottom:12}}>Only you can see this. Check the hours and amounts below. When they look right, send the bills to your dormmates.{pub.sentAt?' The last version you sent stays visible to them until you send this one.':''}</p>
     <button className="pri w" style={{marginBottom:8}} onClick={sendBills}>📨 Send to dormmates</button><button className="w" onClick={discard}>Discard draft</button></Item>}
    {owner&&!isDraft&&tot>0&&<p className="mut" style={{margin:'0 4px 12px'}}>✅ Sent to dormmates{b.sentAt?' · '+fmt(b.sentAt):''}</p>}
-   {tot>0&&<Item data-tour="billshare"><h3>How shares are computed</h3>
+   {tot>0&&<Item data-tour="how"><h3>How shares are computed</h3>
     <div className="row sp"><span className="mut">Period</span><b>{days} days · {rangeH}h</b></div>
     <div className="row sp" style={{marginTop:6}}><span className="mut">{useDays?'Days in the dorm (everyone, added up)':'Hours in the dorm (everyone)'}</span><b>{fh(T)}</b></div>
     {nf?<><div className="row sp" style={{marginTop:10}}><span className="mut">① Base pool · {cfg.pct}%</span><b>{peso(E.base+W.base)}</b></div>
@@ -190,13 +197,13 @@ export default function App(){
      <p className="mut" style={{margin:'4px 0 8px'}}>Use this for a period that already passed with no punches. Enter how many of the {days} days each person was in the dorm.</p>
      {members.map(m=><div key={m.id} className="row sp" style={{marginBottom:6}}><span>{m.n}</span><input name={'md_'+m.id} type="number" min="0" max={days} step="any" inputMode="decimal" placeholder="days" defaultValue={b.mdays?.[m.id]??''} style={{width:90,margin:0}}/></div>)}</div><p className="mut" style={{margin:'0 0 10px'}}>This only saves a private draft. Nothing is sent to your dormmates until you tap “Send to dormmates”.</p><button className="pri w">Save draft & calculate</button></form></Item>)}
    {tot?<>{hm.map((m,i)=>{const s=T?m.h/T:1/hm.length,pd=b.paid?.[m.id],a=E.amounts[i],w=W.amounts[i],baseS=a.base+w.base,useS=a.use+w.use;
-    return <Item key={m.id} data-tour={i===0?'billpeople':undefined}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{fx.includes(m.id)&&<span className="tag t-pending" style={{marginLeft:6}}>fixed</span>}{!pd&&overdue&&<span className="tag t-denied" style={{marginLeft:6}}>overdue</span>}<div className="mut">{fh(m.h)} of {fh(T)} · {(s*100).toFixed(1)}%</div></div><div className="big" style={{fontSize:24}}>{peso(a.total+w.total)}</div></div>
+    return <Item key={m.id} data-tour={i===0?'shares':undefined}><div className="row"><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{fx.includes(m.id)&&<span className="tag t-pending" style={{marginLeft:6}}>fixed</span>}{!pd&&overdue&&<span className="tag t-denied" style={{marginLeft:6}}>overdue</span>}<div className="mut">{fh(m.h)} of {fh(T)} · {(s*100).toFixed(1)}%</div></div><div className="big" style={{fontSize:24}}>{peso(a.total+w.total)}</div></div>
     <div className="mut" style={{marginTop:8}}>{nf?`Base ${peso(baseS)} + Usage ${peso(useS)}`:`By hours: ${peso(useS)}`}</div>
     <div className="row sp mut" style={{marginTop:6}}><span>⚡ {peso(a.total)}</span><span>💧 {peso(w.total)}</span>{owner&&!isDraft?<button className={`sm ${pd?'ok':''}`} onClick={()=>updateDoc(bref,{['paid.'+m.id]:!pd}).then(()=>{if(!pd)ping({sid:sp.id,kind:'paid',id:key,target:m.id})})}>{pd?'Paid ✓':'Mark paid'}</button>:pd&&<span className="tag t-approved">Paid</span>}</div></Item>})}
-    <Item data-tour="billtot"><div className="row sp"><span className="mut">Total billed</span><b>{peso(tot)}</b></div><p className="mut" style={{marginTop:6}}>Cents are allocated so the shares add up exactly to the bill.</p>
+    <Item data-tour="final"><div className="row sp"><span className="mut">Total billed</span><b>{peso(tot)}</b></div><p className="mut" style={{marginTop:6}}>Cents are allocated so the shares add up exactly to the bill.</p>
      <div className="row" style={{marginTop:12}}><button className="sm" style={{flex:1}} onClick={csv}>⬇ Export CSV</button>{owner&&!isDraft&&<button className={`sm ${b.final?'':'pri'}`} style={{flex:1}} onClick={finalize}>{b.final?'Reopen':'🔒 Finalize'}</button>}</div>
      {owner&&!isDraft&&members.some(m=>m.id!==u.uid&&!b.paid?.[m.id])&&<button className="sm w" style={{marginTop:8}} onClick={nudge}>🔔 Remind unpaid members</button>}</Item>
-    {b.final&&<Item data-tour="billrcpt"><h3>🧾 Receipts</h3>
+    {b.final&&<Item data-tour="receipts"><h3>🧾 Receipts</h3>
      {owner?<><p className="mut" style={{marginBottom:10}}>{b.receiptsAt?`Sent ${fmt(b.receiptsAt)}. Regenerate if you reopened and changed anything.`:'Create a PDF receipt for each member showing exactly how their share was computed. Members see only their own.'}</p>
       <button className="pri w" onClick={makeReceipts}>{b.receiptsAt?'🔄 Regenerate & resend':'🧾 Generate & send receipts'}</button>
       {RC.length>0&&<>{hm.filter(m=>RC.some(x=>x.uid===m.id)).map(m=><div key={m.id} className="row sp" style={{marginTop:10}}><span>{m.n}</span><div className="row" style={{gap:8}}><button className="sm" onClick={()=>view(hm.map(z=>RC.find(x=>x.uid===z.id)).filter(Boolean),hm.filter(z=>RC.some(x=>x.uid===z.id)).findIndex(z=>z.id===m.id))}>👁 View</button><button className="sm" onClick={()=>dl([RC.find(x=>x.uid===m.id)])}>⬇ PDF</button></div></div>)}
@@ -207,9 +214,9 @@ export default function App(){
 
  const V={home:Home,dorm:Dorm,history:History,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills'],['settings','⚙️','Settings']],
   fxp={u,sp,owner,members,nm,P:PX,X,B,r,off,setOff,cd,say,col,ping,zoom:setZoom},
-  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
+  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,geoOn,setGeoOn,geoSt,replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
  return <><main>{orbs}
-  <header><button className="hbtn" data-tour="spaces" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
+  <header><button className="hbtn" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
   <AnimatePresence mode="wait"><motion.div key={tab} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-24}} transition={{duration:.18}}>{tab==='fixes'?<Fixes {...fxp}/>:tab==='settings'?<Settings {...stp}/>:V[tab]()}</motion.div></AnimatePresence>
 
   <AnimatePresence>{menu&&<Sheet key={menu} close={()=>setMenu(null)}>

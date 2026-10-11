@@ -5,7 +5,7 @@ import {enablePush} from './push';
 import {auth,db} from './firebase';
 import {ping,pingWait} from './notify';
 import {List,Item,Av,buzz} from './ui';
-import {cyc,cycLabel,fmt,sessions,notify,FIX,defDue,cycEndOf,sameSet} from './lib';
+import {cyc,cycLabel,fmt,sessions,notify,FIX,defDue,cycEndOf,sameSet,parseLL} from './lib';
 
 const DFLT={inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6],longOn:false,longH:10};
 const t12=v=>{const[h,m]=String(v||'0:0').split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`};
@@ -22,7 +22,7 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,replayTour}){
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,replayTour,geoOn,setGeoOn,geoSt}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  const dirty=useRef(null),[saved,setSaved]=useState(false);
@@ -95,6 +95,20 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
    if(hit)ping({sid:sp.id,kind:'billupd',id:hit.id,text:`The host updated your bills: ${parts.join(' · ')}. Open Bills to see your share.`});
    say(hit?'Saved ✓ Existing bills updated and your dormmates were notified':'Saved ✓ Existing bills updated',5000)
   }catch(e){say('Saved, but could not update existing bills: '+e.message,7000)}};
+
+ // ---- auto-detect: dorm Wi-Fi names + dorm location ----
+ const geo=cfg.geo,wifi=cfg.wifi||[],[ga,setGa]=useState({la:geo?.lat??'',ln:geo?.lng??''}),[ml,setMl]=useState('');
+ useEffect(()=>{setGa({la:cfg.geo?.lat??'',ln:cfg.geo?.lng??''})},[cfg.geo?.lat,cfg.geo?.lng]);
+ const readLink=v=>{setMl(v);const p=parseLL(v);if(p)setGa(p)};
+ const useHere=()=>navigator.geolocation?.getCurrentPosition(p=>{setGa({la:p.coords.latitude.toFixed(6),ln:p.coords.longitude.toFixed(6)});say(`Got your location (accurate to about ${Math.round(p.coords.accuracy)} m). Tap Save.`,5000)},e=>say('Could not get your location: '+(e.code===1?'permission denied':'unavailable'),5000),{enableHighAccuracy:true,timeout:25000});
+ const saveAuto=ev=>{ev.preventDefault();const g=new FormData(ev.target),w=String(g.get('w')||'').split(/[\n,]/).map(x=>x.trim()).filter(Boolean).slice(0,8),la=parseFloat(ga.la),ln=parseFloat(ga.ln),ok=Number.isFinite(la)&&Number.isFinite(ln)&&Math.abs(la)<=90&&Math.abs(ln)<=180;
+  upd({'cfg.wifi':w,'cfg.geo':ok?{lat:la,lng:ln,r:+g.get('r')||150,name:String(g.get('nm')||'').trim().slice(0,60)}:deleteField()},'Saved ✓ Dorm Wi-Fi and location updated')};
+ const turnGeo=v=>{if(!v)return setGeoOn(false);navigator.geolocation?.getCurrentPosition(()=>{setGeoOn(true);say('On. DormMate will alert you while the app is open.',4000)},e=>say(e.code===1?'Location permission was denied. Allow it in your browser settings.':'Could not read your location.',5000),{timeout:20000})};
+ const mkKey=async()=>{const k=[...crypto.getRandomValues(new Uint8Array(18))].map(b=>b.toString(16).padStart(2,'0')).join('');
+  try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,autoKey:k},{merge:true});say(PF?.autoKey?'New links created. Update your phone automations.':'Your personal links are ready ✓',5000)}catch(e){say('Failed: '+e.message,5000)}};
+ const aurl=ev=>`${location.origin}/api/presence?uid=${u.uid}&sid=${sp.id}&key=${PF?.autoKey||''}&event=${ev}`;
+ const copy=t=>navigator.clipboard?.writeText(t).then(()=>say('Link copied ✓'),()=>say('Could not copy',3000));
+ const testAuto=async()=>{setBusy(true);try{const j=await (await fetch(aurl('test'))).json();say(j.ok?(j.devices>0?'Test sent ✓ You should get a notification now.':'Reached the server, but no phone is registered. Tap Enable notifications first.'):'Failed: '+(j.error||'unknown'),6000)}catch(e){say('Could not reach the server: '+e.message,5000)}finally{setBusy(false)}};
 
  // ---- host tools ----
  const sendAn=async()=>{if(!an.trim())return;try{const ar=await addDoc(collection(db,'spaces',sp.id,'announcements'),{uid:u.uid,text:an.trim(),createdAt:Date.now()});setAn('');ping({sid:sp.id,kind:'announcement',id:ar.id});buzz();say('Sent to all members 📣')}catch(e){say('Failed: '+e.message,5000)}};
@@ -173,31 +187,61 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
     <p className="mut" style={{marginTop:10}}>The “confirm you are away” alert at 7:30 PM is automatic and cannot be turned off.</p>
    </Acc></Item>
 
+  <Item className="acc-wrap" data-tour="auto">
+   <Acc id="auto" open={open} set={setOpen} icon="📶" title="Auto-detect Wi-Fi & location" sub={`${wifi.length?wifi.length+' Wi-Fi name'+(wifi.length>1?'s':'')+' · ':''}${geo?(geo.name||'dorm location')+' set':'no location set'}`}>
+    <h4>The dorm's Wi-Fi and location {owner?'':'(set by the host)'}</h4>
+    {hostOnly}
+    <fieldset disabled={!owner}><form onSubmit={saveAuto}>
+     <label>Dorm Wi-Fi name(s), separated by commas</label><input name="w" placeholder="e.g. DormWifi, DormWifi-5G" defaultValue={wifi.join(', ')} key={'w'+wifi.join()}/>
+     <label>Landmark or place name</label><input name="nm" maxLength={60} placeholder="e.g. Blue Residences, Unit 4B" defaultValue={geo?.name||''} key={'n'+(geo?.name||'')}/>
+     <label>Paste a Google Maps link, or type coordinates</label><input value={ml} onChange={e=>readLink(e.target.value)} placeholder="https://www.google.com/maps/@14.5995,120.9842 or 14.5995, 120.9842"/>
+     <div className="row"><input style={{margin:0}} inputMode="decimal" placeholder="Latitude" value={ga.la} onChange={e=>setGa({...ga,la:e.target.value})}/><input style={{margin:0}} inputMode="decimal" placeholder="Longitude" value={ga.ln} onChange={e=>setGa({...ga,ln:e.target.value})}/></div>
+     {owner&&<button type="button" className="w" style={{margin:'8px 0'}} onClick={useHere}>📍 Use my current location (stand inside the dorm)</button>}
+     <label>Perimeter around that point</label><select name="r" defaultValue={geo?.r||150} key={'r'+(geo?.r||150)}>{[50,100,150,200,300,500].map(m=><option key={m} value={m}>{m} meters</option>)}</select>
+     {geo&&<p className="mut" style={{marginBottom:10}}><a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${geo.lat},${geo.lng}`}>Open the dorm in Maps</a></p>}
+     {owner&&<button className="pri w">Save Wi-Fi & location</button>}</form></fieldset>
+
+    <h4>Alerts while the app is open</h4>
+    {geo?<><label className="chk"><input type="checkbox" checked={!!geoOn} onChange={e=>turnGeo(e.target.checked)}/>Tell me when I arrive at or leave the dorm</label>
+     <p className="mut" style={{marginBottom:10}}>{!geoOn?'Uses your phone\'s location only while DormMate is open on screen.':geoSt?.err?'⚠️ Location is '+(geoSt.err==='denied'?'blocked. Allow it in your browser settings.':'unavailable right now.'):geoSt?`You are about ${geoSt.d} m from ${geo.name||'the dorm'} (${geoSt.inside?'inside':'outside'} the ${geo.r} m perimeter). GPS accuracy ±${geoSt.ac} m.`:'Looking for your location…'}</p></>
+     :<p className="mut" style={{marginBottom:10}}>The host has not set the dorm location yet.</p>}
+
+    <h4>Alerts when the app is closed</h4>
+    <p className="mut" style={{marginBottom:10}}>A website cannot see your Wi-Fi name or watch your location in the background, but your phone can. Set up a one-time automation on your phone. It calls these personal links when you connect to or leave the dorm Wi-Fi, or arrive at or leave the dorm, and DormMate then sends you a notification asking if you want to time in or out. It works with the app closed.</p>
+    {PF?.autoKey?<>
+     {[['wifi_in','📶 Connected to the dorm Wi-Fi'],['wifi_out','📴 Disconnected from the dorm Wi-Fi'],['arrived','📍 Arrived at the dorm'],['left','🚶 Left the dorm']].map(([e,l])=><Row key={e}><span>{l}</span><button className="sm" onClick={()=>copy(aurl(e))}>Copy link</button></Row>)}
+     <button className="w" style={{margin:'4px 0 8px'}} disabled={busy} onClick={testAuto}>🔔 Send me a test alert</button>
+     <button className="sm w" style={{marginBottom:12}} onClick={()=>confirm('Create new links? Your old links stop working and you must update your phone automations.')&&mkKey()}>Create new links (if one leaked)</button>
+     <details style={{marginBottom:8}}><summary><b>iPhone setup (Shortcuts app)</b></summary><p className="mut" style={{marginTop:8}}>1. Open Shortcuts → Automation → + → <b>Wi-Fi</b> (choose the dorm network{wifi.length?`: ${wifi.join(' or ')}`:''}, and “Connects”) or <b>Arrive</b> (choose the dorm location).<br/>2. Add the action <b>Get Contents of URL</b> and paste the matching link.<br/>3. Set <b>Run Immediately</b> (not “Ask Before Running”) and save.<br/>4. Repeat with “Disconnects” or <b>Leave</b> and the matching link.</p></details>
+     <details><summary><b>Android setup (MacroDroid, free)</b></summary><p className="mut" style={{marginTop:8}}>1. Install MacroDroid → Add Macro.<br/>2. Trigger: <b>Wi-Fi Connected</b> (pick the dorm network{wifi.length?`: ${wifi.join(' or ')}`:''}) or <b>Location → Geofence</b> (Entering the dorm area).<br/>3. Action: <b>HTTP Request</b> → GET → paste the matching link.<br/>4. Repeat with Wi-Fi Disconnected / Exiting area and the matching link.<br/>5. In your phone settings, set MacroDroid's battery to “Unrestricted” so it can run in the background.</p></details></>
+     :<button className="pri w" onClick={mkKey}>Create my personal links</button>}
+   </Acc></Item>
+
   <Item className="acc-wrap" data-tour="look">
    <Acc id="look" open={open} set={setOpen} icon="🌗" title="Appearance" sub={`Theme: ${thm==='light'?'Light':thm==='system'?'Follow my phone':'Dark'}`}>
     <div className="seg">{[['light','☀️ Light'],['dark','🌙 Dark'],['system','📱 System']].map(([k,l])=><button key={k} className={thm===k?'on':''} onClick={()=>{setThm(k);buzz()}}>{l}</button>)}</div>
     <p className="mut">Saved on this phone. “System” switches automatically with your phone's setting.</p>
    </Acc></Item>
 
-  <Item className="acc-wrap" data-tour="help">
+  <Item className="acc-wrap" data-tour="set-help">
    <Acc id="help" open={open} set={setOpen} icon="❓" title="Help" sub="Replay the How-To guide">
     <p className="mut" style={{marginBottom:10}}>Take the page-by-page tour of the app again whenever you like.</p>
     <button className="pri w" onClick={replayTour}>▶ Play the How-To guide</button>
    </Acc></Item>
 
-  {owner&&<Item className="acc-wrap" data-tour="host">
+  {owner&&<Item className="acc-wrap" data-tour="set-host">
    <Acc id="host" open={open} set={setOpen} icon="📣" title="Host tools" sub="Send a message to everyone">
     <p className="mut" style={{marginBottom:8}}>Your message is sent as a push notification to every member and shown in the Dorm tab.</p>
     <input placeholder="e.g. Water will be off at 3 PM" maxLength={140} value={an} onChange={e=>setAn(e.target.value)}/><button className="pri w" disabled={!an.trim()} onClick={sendAn}>Send notification</button>
    </Acc></Item>}
 
-  <Item className="acc-wrap" data-tour="data">
+  <Item className="acc-wrap" data-tour="set-data">
    <Acc id="data" open={open} set={setOpen} icon="📦" title="Export data" sub={`Current cycle · ${cycLabel(r)}`}>
     <p className="mut" style={{marginBottom:10}}>Download spreadsheets (CSV) for the current cycle. {owner?'As host you get everyone.':'You get your own.'}</p>
     <button className="w" style={{marginBottom:8}} onClick={expHours}>⬇ Hours & sessions</button><button className="w" onClick={expReq}>⬇ Fix requests</button>
    </Acc></Item>
 
-  <Item className="acc-wrap" data-tour="account">
+  <Item className="acc-wrap" data-tour="set-account">
    <Acc id="account" open={open} set={setOpen} icon="👤" title="Account" sub={u.email||'Signed in with Google'}>
     <button className="w" style={{marginBottom:8}} onClick={switchAcc}>🔄 Switch account</button><button className="w" style={{marginBottom:8}} onClick={()=>signOut(auth)}>Sign out</button>
     <button className="no w" onClick={delAcc}>Delete my account</button>
