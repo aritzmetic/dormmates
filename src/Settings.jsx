@@ -22,7 +22,7 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,replayTour,geoOn,setGeoOn,geoSt}){
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,replayTour,geoOn,setGeoOn,geoSt}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  const dirty=useRef(null),[saved,setSaved]=useState(false);
@@ -135,6 +135,10 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      <p className="mut" style={{marginBottom:10}}>Current cycle: <b style={{color:'var(--ink)'}}>{cycLabel(cyc(0,cd))}</b>. Hours, fixes and bills follow this range. Bills already saved under older dates stay in their old cycle.</p>
      {owner&&<button className="pri w">Save space</button>}</form></fieldset>
 
+    <h4>Punch notes</h4>
+    {owner?<label className="chk"><input type="checkbox" checked={cfg.notes!==false} onChange={e=>upd({'cfg.notes':e.target.checked},e.target.checked?'Punch notes are on':'Punch notes are off')}/>Let members add a short note when they time in or out</label>:<p className="mut">{cfg.notes!==false?'Your host allows a short note on each time in / out.':'Your host has turned punch notes off.'}</p>}
+    <p className="mut" style={{marginBottom:10}}>Turning this off hides every note and removes the note box. Existing notes are kept and come back if it is turned on again.</p>
+
     <h4>Invite code</h4>
     <Row><b style={{fontSize:22,letterSpacing:2}}>{sp.code}</b><span className="row" style={{gap:8}}><button className="sm" onClick={()=>navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'))}>Copy</button><button className="sm" onClick={share}>Share</button>{owner&&<button className="sm" onClick={newCode}>New</button>}</span></Row>
 
@@ -221,6 +225,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
    <Acc id="look" open={open} set={setOpen} icon="🌗" title="Appearance" sub={`Theme: ${thm==='light'?'Light':thm==='system'?'Follow my phone':'Dark'}`}>
     <div className="seg">{[['light','☀️ Light'],['dark','🌙 Dark'],['system','📱 System']].map(([k,l])=><button key={k} className={thm===k?'on':''} onClick={()=>{setThm(k);buzz()}}>{l}</button>)}</div>
     <p className="mut">Saved on this phone. “System” switches automatically with your phone's setting.</p>
+    {cfg.notes!==false&&<label className="chk" style={{marginTop:8}}><input type="checkbox" checked={!hideN} onChange={e=>setHideN(!e.target.checked)}/>Show punch notes (on this phone)</label>}
    </Acc></Item>
 
   <Item className="acc-wrap" data-tour="set-help">

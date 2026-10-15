@@ -29,12 +29,12 @@ export default async function handler(req,res){
       const{r,d}=await get('punches');
       if(!d||d.uid!==uid||!['in','out','away'].includes(d.type)||!fresh(d.ts)||d.pushed)return skip();
       await r.update({pushed:true});to=others(sp,uid);
-      const proof=d.photo?'with a photo':d.loc?'with their location':'';
+      const proof=d.photo?'with a photo':d.loc?'with their location':'',nt=sp.cfg?.notes!==false&&d.note?` “${cut(String(d.note),80)}”`:'';
       msg=d.type==='away'
-        ?{title:`📍 ${who(sp,uid)} is still away`,body:`Confirmed at ${tf(d.ts)}${proof?' '+proof:''}. They will not be auto timed in tonight.`,tag:'away-'+id}
+        ?{title:`📍 ${who(sp,uid)} is still away`,body:`Confirmed at ${tf(d.ts)}${proof?' '+proof:''}.${nt} They will not be auto timed in tonight.`,tag:'away-'+id}
         :d.type==='in'
-        ?{title:`🏠 ${who(sp,uid)} is home`,body:`Timed in at ${tf(d.ts)}${proof?' '+proof:''}.`,tag:'punch-'+id}
-        :{title:`🚪 ${who(sp,uid)} is out`,body:`Timed out at ${tf(d.ts)}${proof?' '+proof:''}.`,tag:'punch-'+id};
+        ?{title:`🏠 ${who(sp,uid)} is home`,body:`Timed in at ${tf(d.ts)}${proof?' '+proof:''}.${nt}`,tag:'punch-'+id}
+        :{title:`🚪 ${who(sp,uid)} is out`,body:`Timed out at ${tf(d.ts)}${proof?' '+proof:''}.${nt}`,tag:'punch-'+id};
     }
     else if(kind==='note'){
       const{r,d}=await get('notes');

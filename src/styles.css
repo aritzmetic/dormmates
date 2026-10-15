@@ -149,3 +149,17 @@ select{color:var(--ink)}
 .cam-shot{width:74px;height:74px;border-radius:50%;border:5px solid #fff;background:#ffffff33;padding:0}.cam-shot:disabled{opacity:.4}.cam-shot:active{background:#fff}
 .cam-err{padding:24px;max-width:420px;color:#fff;text-align:center}.cam-err p{margin-bottom:16px}
 .awayline{font-size:13px;margin-top:2px}
+
+/* ---------- camera flash ---------- */
+.cam-flash{position:absolute;inset:0;z-index:5;background:#fff;color:#555;display:flex;align-items:center;justify-content:center;font-size:18px}
+.cam-fl.on{background:var(--lamp);color:#3b2600;border-color:var(--lamp)}.cam-fl:disabled{opacity:.5}
+.cam-hint{position:absolute;top:calc(64px + env(safe-area-inset-top));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 4px #000}
+/* ---------- time slider (fixes) ---------- */
+.tp{background:var(--card2);border-radius:16px;padding:12px;margin-bottom:10px}
+.tp-v{font-size:22px;color:var(--lamp)}
+.tp input[type=range]{display:block;width:100%;height:34px;margin:6px 0 0;padding:0;border:0;background:transparent;accent-color:var(--lamp)}
+.tp-t{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);margin:0 2px 8px}
+.tp-b{display:flex;gap:6px}.tp-b button{flex:1;padding:9px 0;font-size:12px;border-radius:10px;background:var(--inp);border:1.5px solid var(--line)}
+.tp-bar{height:10px;border-radius:6px;background:var(--line);position:relative;overflow:hidden;margin:2px 0 12px}.tp-bar i{position:absolute;top:0;bottom:0;background:var(--lamp);border-radius:6px}
+/* ---------- punch notes ---------- */
+.pnote{font-size:13px;margin-top:6px;padding:7px 10px;border-radius:10px;background:var(--soft2);word-break:break-word}

@@ -19,7 +19,18 @@ const STATUS={all:'Any status',pending:'Pending',suggested:'Suggested',approved:
 //  - Time out only : "I forgot to time out" - ends your open session at that time
 //  - Edit / Remove : change or delete one day's part of a session
 // `P` here already contains approved in/out-only fixes (App passes withFix(P,X)).
-export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,col,ping,zoom}){
+// time slider: drag, or use the +/- buttons. `v` is minutes from the start of the day.
+function TimePick({label,v,min=0,max=1439,onChange,fm,ticks=true}){
+ const c=x=>Math.max(min,Math.min(max,x)),val=c(Number.isFinite(v)?v:0);
+ return <div className="tp"><div className="row sp"><span className="mut">{label}</span><b className="tp-v">{fm(val)}</b></div>
+  <input type="range" min={min} max={max} step={5} value={val} onChange={e=>onChange(+e.target.value)}/>
+  {ticks&&max<=1439&&<div className="tp-t"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11:59 PM</span></div>}
+  <div className="tp-b">{[[-60,'−1h'],[-15,'−15m'],[-1,'−1m'],[1,'+1m'],[15,'+15m'],[60,'+1h']].map(([d,l])=><button type="button" key={l} onClick={()=>onChange(c(val+d))}>{l}</button>)}</div></div>}
+const Range=({a,b})=><div className="tp-bar"><i style={{left:Math.max(0,a)/14.4+'%',width:Math.max(0,Math.min(1440,b)-Math.max(0,a))/14.4+'%'}}/></div>;
+const fm=m=>{const mm=((m%1440)+1440)%1440,h=Math.floor(mm/60),n=mm%60;return `${h%12||12}:${String(n).padStart(2,'0')} ${h<12?'AM':'PM'}${m>=1440?' · next day':''}`};
+const hmM=t=>/^\d\d:\d\d$/.test(t||'')?+t.slice(0,2)*60+ +t.slice(3,5):NaN;
+
+export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,col,ping,zoom,showN}){
  const cfg=sp.cfg||{},now=Date.now(),sid=sp.id,maxD=cfg.fixMaxDays||31,oldest=!owner&&cfg.fixBackDays>0?+dayAt(now,-cfg.fixBackDays):0,auto=owner&&cfg.hostAuto!==false;
  const [fw,setFw]=useState(owner?'all':u.uid),[fs,setFs]=useState('all'),[ex,setEx]=useState({}),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[busy,setBusy]=useState(false),[vu,setVu]=useState(u.uid),[more,setMore]=useState(false);
  // host can look at any member's punches (counter-check). Changes made while looking at someone else are SUGGESTIONS that member must accept.
@@ -82,6 +93,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    LK=lockOf(cycOf(d0,cd))||d0<oldest,
    SS=pairs(tu,P,X).filter(s=>s.a<d1&&s.b>d0).sort((a,b)=>a.a-b.a).map(s=>({...s,ca:Math.max(s.a,d0),cb:Math.min(s.b,d1)})),
    edits=SS.filter(s=>!s.live),PN=X.filter(x=>x.uid===tu&&open_(x)&&touches(x,d0)).length,RAW=[...norm(tu,P),...P.filter(p=>p.uid===tu&&p.type==='away')].filter(p=>p.ts>=d0&&p.ts<d1).sort((a,b)=>a.ts-b.ts),
+   capM=Math.max(0,Math.floor((now-d0)/6e4)),
    span=s=>`${s.a<d0?'12:00 AM':tm(s.a)} → ${s.live?'now':s.b>=d1?'end of day ↪':tm(s.b)}`,
    startEdit=s=>setEf({mode:'edit',s,ti:hm(s.ca),to:s.cb>=d1?'23:59':hm(s.cb),r:''}),
    startRemove=s=>setEf({mode:'remove',s,r:''});
@@ -94,18 +106,35 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    let pv=null,ok=true,hint=null,form=null;
    if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o),sg=a>0&&b>a?splitDays(a,b):[],tot=sg.reduce((t,s)=>t+s.b-s.a,0)/36e5;
     ok=sg.length>0&&sg.length<=maxD;
-    form=<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/></>;
+    const mi=Math.round((a-d0)/6e4),mo=Math.round((b-d0)/6e4),sl=!ef.typed&&mi>=0&&mi<1440&&mo>0&&mo<=2879;   // sliders work inside this day (the time out may run into the next day)
+    form=sl?<>
+      <TimePick label="Time in" v={mi} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,i:iso(d0+m*6e4),o:m>=mo?iso(d0+Math.min(capM,m+15)*6e4):ef.o})}/>
+      <TimePick label="Time out" v={mo} max={Math.min(2879,capM)} fm={fm} ticks={false} onChange={m=>setEf({...ef,o:iso(d0+m*6e4),i:m<=mi?iso(d0+Math.max(0,m-15)*6e4):ef.i})}/>
+      <Range a={mi} b={mo}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact date & time instead</button></>
+     :<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false,i:iso(d0),o:iso(Math.min(eod(d0),now))})}>🎚 Use the sliders (this day)</button></>;
     hint='Starts at 12:00 AM and ends at 11:59 PM by default, change it if needed. Once approved, this replaces any punches inside that window. For several days, set the time in on the first day and the time out on the last day.';
     pv=!sg.length?<div className="pv bad">Time out must be after time in.</div>:sg.length>maxD?<div className="pv bad">That is {sg.length} days. The limit per request is {maxD} days.</div>
      :<div className="pv"><div className="row sp"><b>{sg.length>1?`${sg.length} days`:'1 day'}</b><b>{dur(tot)}</b></div>
        {sg.length>1&&<p className="mut" style={{margin:'4px 0 8px'}}>Each day is its own request, so you can change or cancel one day without touching the rest.</p>}
        {(sg.length>5?[sg[0],sg[1],null,sg.at(-1)]:sg).map((s,k)=>s?<div key={k} className="row sp mut"><span>{dayName(s.day)}</span><span>{tm(s.a)} → {tm(s.b)}</span></div>:<div key={k} className="mut" style={{textAlign:'center'}}>⋮ {sg.length-3} more days ⋮</div>)}</div>}
    else if(ef.mode==='in'||ef.mode==='out'){const T=at(d0,ef.t),c=T>0?fixCheck(tu,P,ef.mode,T,now):{ok:false,msg:'Pick a time.'};ok=c.ok;
-    form=<><label>{ef.mode==='in'?'What time did you time in?':'What time did you time out?'}</label><input type="time" value={ef.t} onChange={e=>setEf({...ef,t:e.target.value})}/></>;
+    const tmM=hmM(ef.t);
+    form=!ef.typed&&Number.isFinite(tmM)?<><TimePick label={ef.mode==='in'?'What time did you time in?':'What time did you time out?'} v={tmM} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,t:hm(d0+m*6e4)})}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact time instead</button></>
+     :<><label>{ef.mode==='in'?'What time did you time in?':'What time did you time out?'}</label><input type="time" value={ef.t} onChange={e=>setEf({...ef,t:e.target.value})}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false,t:ef.mode==='in'?'00:00':eod(d0)>now?hm(now):'23:59'})}>🎚 Use the slider</button></>;
     hint=ef.mode==='in'?'Use this when you forgot to time in. It counts until your next time out.':'Use this when you forgot to time out. It ends your open session at this time.';
     pv=<div className={`pv ${c.ok?'':'bad'}`}>{c.msg}</div>}
    else if(ef.mode==='edit'){const A=at(d0,ef.ti),B2=at(d0,ef.to);ok=A>0&&B2>A;
-    form=<><div className="sess"><span className="mut">Current</span><div><b>{span(ef.s)}</b></div></div><label>Time in</label><input type="time" value={ef.ti} onChange={e=>setEf({...ef,ti:e.target.value})}/><label>Time out</label><input type="time" value={ef.to} onChange={e=>setEf({...ef,to:e.target.value})}/></>;
+    form=<><div className="sess"><span className="mut">Current</span><div><b>{span(ef.s)}</b></div></div>{!ef.typed&&Number.isFinite(hmM(ef.ti))&&Number.isFinite(hmM(ef.to))?<>
+      <TimePick label="Time in" v={hmM(ef.ti)} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,ti:hm(d0+m*6e4),to:m>=hmM(ef.to)?hm(d0+Math.min(1439,capM,m+15)*6e4):ef.to})}/>
+      <TimePick label="Time out" v={hmM(ef.to)} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,to:hm(d0+m*6e4),ti:m<=hmM(ef.ti)?hm(d0+Math.max(0,m-15)*6e4):ef.ti})}/>
+      <Range a={hmM(ef.ti)} b={hmM(ef.to)}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact times instead</button></>
+     :<><label>Time in</label><input type="time" value={ef.ti} onChange={e=>setEf({...ef,ti:e.target.value})}/><label>Time out</label><input type="time" value={ef.to} onChange={e=>setEf({...ef,to:e.target.value})}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false})}>🎚 Use the sliders</button></>}</>;
     hint="Only this day's part of the session changes. Other days are not affected.";
     pv=ok?<div className="pv"><div className="row sp"><b>New time</b><b>{dur((B2-A)/36e5)}</b></div></div>:<div className="pv bad">Time out must be after time in.</div>}
    else form=<div className="sess"><b>{span(ef.s)}</b><div className="mut">This day's part of the session stops counting once approved. Other days are not affected.</div></div>;
@@ -118,7 +147,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
   const proofOf=p=>p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
   return <><h2>{title}</h2>{sg&&<div className="warn" style={{marginTop:8}}>🔍 Viewing <b>{nm(tu)}</b>'s punches. Anything you change is sent as a <b>suggestion</b> they must accept.</div>}<p className="mut" style={{margin:'4px 0 14px'}}>{dur(iv(tu,P,X,[d0,d1]).reduce((t,[a,b])=>t+b-a,0)/36e5)} logged this day</p>
    {PN>0&&<div className="warn">⏳ {PN} request{PN>1?'s':''} pending for this day.</div>}
-   {owner&&<div className="sess"><b>Punches on this day</b>{RAW.length?RAW.map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> · {tm(p.ts)}<div className="mut">{p.fix?'approved fix':p.auto?'auto time-in (8:00 PM)':p.photo?'photo proof':p.loc?'location proof':p.type==='away'?'proof sent':'no proof'}</div></div>{proofOf(p)}</div>):<p className="mut" style={{marginTop:6}}>No punches recorded.</p>}</div>}
+   {owner&&<div className="sess"><b>Punches on this day</b>{RAW.length?RAW.map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> · {tm(p.ts)}<div className="mut">{p.fix?'approved fix':p.auto?'auto time-in (8:00 PM)':p.photo?'photo proof':p.loc?'location proof':p.type==='away'?'proof sent':'no proof'}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{proofOf(p)}</div>):<p className="mut" style={{marginTop:6}}>No punches recorded.</p>}</div>}
    {SS.map((s,i)=><div key={i} className="sess"><b>{span(s)}</b><div className="mut">{dur((s.cb-s.ca)/36e5)}{s.live?' · still timed in':''}{s.fix?' · approved fix':''}{s.ip?.auto?' · auto time-in':''}{s.a<d0?' · started yesterday':''}</div>
     {!LK&&!s.live&&<div className="row" style={{marginTop:10}}><button className="sm" style={{flex:1}} onClick={()=>startEdit(s)}>✏️ Edit</button><button className="sm no" style={{flex:1}} onClick={()=>startRemove(s)}>🗑 Remove</button></div>}
     {s.live&&<div className="mut" style={{marginTop:6}}>Tip: forgot to time out? Use “Time out only” below.</div>}</div>)}
@@ -166,7 +195,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    <div className="fchips" style={{paddingBottom:0}}>{members.map(m=><button key={m.id} className={`fchip ${tu===m.id?'on':''}`} onClick={()=>{setVu(m.id);setDy(null);setEf(null)}}>{m.id===u.uid?'Me':m.n.split(' ')[0]}</button>)}</div>
    {(()=>{const ev=[...norm(tu,P),...P.filter(p=>p.uid===tu&&p.type==='away')].filter(p=>p.ts>=r[0]&&p.ts<r[1]).sort((a,b)=>b.ts-a.ts);
     return <><p className="mut" style={{margin:'12px 0 4px'}}>{nm(tu)} · {ev.length} punch{ev.length===1?'':'es'} this cycle</p>
-    {ev.slice(0,more?200:6).map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> <span className="mut">{p.auto?'· auto':p.fix?'· fix':''}</span><div className="mut">{fmt(p.ts)}</div></div>{p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null}<button className="sm" onClick={()=>{setDy(+dayAt(p.ts,0));setEf(null)}}>Review</button></div>)}
+    {ev.slice(0,more?200:6).map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> <span className="mut">{p.auto?'· auto':p.fix?'· fix':''}</span><div className="mut">{fmt(p.ts)}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null}<button className="sm" onClick={()=>{setDy(+dayAt(p.ts,0));setEf(null)}}>Review</button></div>)}
     {ev.length>6&&<button className="sm w" style={{marginTop:8}} onClick={()=>setMore(!more)}>{more?'Show less ▴':`Show all ${ev.length} ▾`}</button>}</>})()}</Item>}
   <Item data-tour="fixcal"><h3>{sg?`${nm(tu)}'s hours`:'Fix your hours'}</h3><p className="mut">{sg?'Tap a day to review the punches and suggest a correction.':`Tap a day, then choose: edit a session, add time in + out, time in only, or time out only. ${nm(sp.ownerId)} ${auto?'approves requests from others':'approves or denies it'}.`}</p>
    <div className="cal">{['S','M','T','W','T','F','S'].map((w,i)=><div key={i} className="wd">{w}</div>)}{[...Array(lead)].map((_,i)=><div key={'e'+i}/>)}
