@@ -58,6 +58,19 @@ export default async function handler(req,res){
           await ref.set({at:Date.now()});   // claim first so it is never sent twice
           await push(others(sp,uid),{title:`🏠 ${who(sp,uid)} was auto timed in`,body:`They did not confirm they were away before 8:00 PM, so they are counted as home.`,tag:'auto-'+uid+'-'+e.ts});out.auto=(out.auto||0)+1}}}}
 
+    // 1c) disconnected from the dorm Wi-Fi but still timed in after the grace period -> ask the HOST to verify
+    for(const s of spaces.docs){const sp=s.data(),grace=(+sp.cfg?.wifiGrace||5)*60e3;
+      const pend=await s.ref.collection('presence').where('pending','==',true).get();
+      for(const d of pend.docs){const p=d.data();if(p.escalatedAt||!p.outAt||Date.now()-p.outAt<grace)continue;
+        const last=norm(d.id,await punches(s),Date.now()).at(-1);
+        if(last?.type!=='in'||last.ts>p.outAt){await d.ref.set({pending:false,resolved:'auto-clear'},{merge:true});continue}   // they timed out / reconnected meanwhile
+        await d.ref.set({escalatedAt:Date.now()},{merge:true});   // claim first
+        const mins=Math.round((Date.now()-p.outAt)/6e4),name=who(sp,d.id);
+        await push([sp.ownerId],d.id===sp.ownerId
+          ?{title:'📴 Still timed in?',body:`You left the dorm Wi-Fi ${mins} min ago and are still timed in. Open DormMate to time out.`,url:'/?punch=out',tag:'verify-'+d.id}
+          :{title:`📴 ${name} left the dorm Wi-Fi`,body:`${mins} min ago, and ${name} is still timed in. Did they leave? Tap to verify.`,url:'/?verify=1',tag:'verify-'+d.id});
+        out.verify=(out.verify||0)+1}}
+
     // 2) daily 9:00 AM: bill due + fix deadline reminders
     if(mins>=540&&mins<560){
       for(const s of spaces.docs){

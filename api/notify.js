@@ -96,6 +96,16 @@ export default async function handler(req,res){
       await r.update({updNotified:d.updAt});to=others(sp,uid);
       msg={title:'📅 Bill settings updated',body:cut(String(req.body?.text||'The host updated your bill settings.'),160),tag:'billupd-'+id};
     }
+    else if(kind==='comment'){
+      // someone commented on a time in / time out entry: tell the entry's owner and anyone already in that conversation
+      const{r,d}=await get('comments');
+      if(sp.cfg?.notes===false||!d||d.uid!==uid||!fresh(d.ts)||d.pushed)return skip();
+      await r.update({pushed:true});
+      const set=new Set();if(d.puid&&d.puid!==uid)set.add(d.puid);
+      (await sref.collection('comments').where('pid','==',d.pid).get()).docs.forEach(x=>{const w=x.data().uid;if(w&&w!==uid)set.add(w)});
+      to=[...set];
+      msg={title:`💬 ${who(sp,uid)} commented`,body:cut(`“${cut(d.text,100)}” on ${d.puid===uid?'their own':who(sp,d.puid)+"'s"} time ${d.ptype||'entry'}`),tag:'cmt-'+d.pid};
+    }
     else if(kind==='remset'){
       // confirmation that the person's reminders were saved; goes through the same push path as every other notification
       const t=String(req.body?.text||'').slice(0,160);

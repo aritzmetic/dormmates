@@ -4,7 +4,7 @@ import {onAuthStateChanged,signInWithPopup,signOut,deleteUser,reauthenticateWith
 import {doc,setDoc,addDoc,updateDoc,deleteDoc,deleteField,collection,query,where,orderBy,limit,onSnapshot,getDocs,arrayUnion,arrayRemove,writeBatch} from 'firebase/firestore';
 import {auth,db,gp} from './firebase';
 import {enablePush} from './push';
-import {ping} from './notify';
+import {ping,hostact} from './notify';
 import ReceiptView from './ReceiptView';
 import Fixes from './Fixes';
 import Settings from './Settings';
@@ -13,7 +13,6 @@ import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
 import Cam from './Cam';
-import useGeofence from './useGeofence';
 
 // shown to the host right after a space is created: they must choose when the billing cycle starts
 function CycleSetup({sp,say}){const[day,setDay]=useState(14),[busy,setBusy]=useState(false);
@@ -35,7 +34,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[pnote,setPnote]=useState(''),[ne,setNe]=useState(null),[hideN,setHideN_]=useState(localStorage.getItem('hideNotes')==='1'),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[PRS,setPRS]=useState({}),[CM,setCM]=useState([]),[cm,setCm]=useState(null),[ctext,setCtext]=useState(''),[vn,setVn]=useState({}),[vb,setVb]=useState(null),[pnote,setPnote]=useState(''),[ne,setNe]=useState(null),[hideN,setHideN_]=useState(localStorage.getItem('hideNotes')==='1'),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
  const setThm=m=>{setTheme(m);setThm_(m)};
  const PX=withFix(P,X); // punches + approved time-in-only / time-out-only fixes
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
@@ -46,8 +45,10 @@ export default function App(){
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
- useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);setR([]);setBD([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
+ useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);setR([]);setBD([]);setPRS({});setCM([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
   const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(30)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(10)),d=>setA(m(d))),onSnapshot(sp.ownerId===u.uid?collection(s,'receipts'):query(collection(s,'receipts'),where('uid','==',u.uid)),d=>setR(m(d)),()=>{}),
+   onSnapshot(collection(s,'presence'),d=>setPRS(Object.fromEntries(d.docs.map(x=>[x.id,x.data()]))),()=>{}),
+   onSnapshot(query(collection(s,'comments'),orderBy('ts','desc'),limit(400)),d=>setCM(m(d)),()=>{}),
    sp.ownerId===u.uid?onSnapshot(collection(s,'billDrafts'),d=>setBD(m(d)),()=>{}):()=>{}];
   return()=>un.forEach(x=>x())},[sp?.id,sp?.ownerId]);
  const open=id=>{setSid(id);setTab('home');setOff(0);setMenu(null)};
@@ -62,12 +63,8 @@ export default function App(){
   [['in',PF.inOn,PF.inAt,true,'🟢 Time to time in',"You're not timed in yet. Open DormMate to punch in."],['out',PF.outOn,PF.outAt,true,'🔴 Time to time out',"You're still timed in. Open DormMate to punch out."]].forEach(([k,on_,at,need,t,b])=>{
    const[h,m]=String(at||'').split(':').map(Number),d=mins-(h*60+m);if(!on_||!Number.isFinite(d)||d<0||d>=10||localStorage.getItem('rl-'+k)===day)return;
    localStorage.setItem('rl-'+k,day);if(need)notify(t,b)})});
- // dorm location (host sets it in Settings): while the app is open, alert when the user arrives / leaves
- const [geoOn,setGeoOn_]=useState(localStorage.getItem('geoWatch')==='1'),setGeoOn=v=>{localStorage.setItem('geoWatch',v?'1':'0');setGeoOn_(v)};
- const geoSt=useGeofence({geo:sp?.cfg?.geo,on:geoOn&&!!u,isIn:u?norm(u.uid,PX).at(-1)?.type==='in':false,onPrompt:(k,g,d)=>{
-  const t=k==='arrived'?`📍 You're at ${g.name||'the dorm'}`:`🚶 You're away from ${g.name||'the dorm'}`,b=k==='arrived'?'Want to time in?':'You are still timed in. Time out?';say(t+'\n'+b,8000);notify(t,b)}});
  // opened from a "time in / time out?" notification
- useEffect(()=>{if(!u||!sp)return;if(new URLSearchParams(location.search).get('punch')){history.replaceState(null,'',location.pathname);setTab('home');setMenu('punch')}},[u?.uid,sp?.id]);
+ useEffect(()=>{if(!u||!sp)return;const q=new URLSearchParams(location.search);if(q.get('punch')){history.replaceState(null,'',location.pathname);setTab('home');setMenu('punch')}else if(q.get('verify')){history.replaceState(null,'',location.pathname);setTab('dorm')}},[u?.uid,sp?.id]);
  // punch notes: the host can turn them off for the whole space; each person can also hide them on their own phone
  const notesOn=sp?.cfg?.notes!==false,showN=notesOn&&!hideN,setHideN=v=>{localStorage.setItem('hideNotes',v?'1':'0');setHideN_(v)};
  useEffect(()=>{if(!menu)setPnote('')},[menu]);
@@ -85,11 +82,14 @@ export default function App(){
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
  const last=id=>norm(id,PX).at(-1),mine=last(u.uid),on=mine?.type==='in',pend=(owner?new Set(X.filter(x=>x.status==='pending').map(x=>x.batch||x.id)).size:0)+new Set(X.filter(x=>x.status==='suggested'&&x.uid===u.uid).map(x=>x.batch||x.id)).size;
  const H=id=>hrs(id,PX,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
- const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
+ const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.wifi?<span className="tag t-approved">{p.by?'by host':'📶 Wi-Fi'}</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
 
  async function save(pr,type){type=type||(on?'out':'in');const pref=await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr,...(notesOn&&pnote.trim()?{note:pnote.trim().slice(0,140)}:{})});setMenu(null);buzz();ping({sid:sp.id,kind:'punch',id:pref.id});   // time in, time out AND "still away" confirmations notify the dorm
   if(type==='away')return say('Confirmed ✓ Next check is tomorrow 7:30–8:00 PM');setBurst(b=>b+1);
   if(type==='in')return say('Timed in ✓');const m=`Auto time-in ${dayWord(fd(Date.now()))} at 8:00 PM. Confirm from 7:30 PM to stay out.`;say('Timed out ✓\n'+m,6000);notify('Timed out ✓',m)}
+ const cnt=id=>CM.filter(c=>c.pid===id).length,openCmt=p=>{setCm({id:p.id,uid:p.uid,type:p.type,ts:p.ts,note:p.note});setCtext('');setMenu('cmt')};
+ const sendCmt=async()=>{const t=ctext.trim();if(!t||!cm)return;try{const r=await addDoc(col('comments'),{pid:cm.id,puid:cm.uid,ptype:cm.type,uid:u.uid,text:t.slice(0,200),ts:Date.now()});setCtext('');buzz();ping({sid:sp.id,kind:'comment',id:r.id})}catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',6000)}};
+ const hostAct=async(target,action,when,text)=>{setVb(target);try{const j=await hostact({sid:sp.id,action,target,when,text});say(action==='timeout'?(j.already?'Already timed out':`${nm(target)} was timed out ✓ and notified`):action==='remind'?(j.devices>0?'Reminder sent ✓':'Sent, but they have no registered phone'):'Done ✓',5000);setVn(v=>({...v,[target]:''}))}catch(e){say(e.message,5000)}finally{setVb(null)}};
  const saveNote=async clear=>{try{await updateDoc(doc(db,'spaces',sp.id,'punches',ne.id),{note:clear===true||!ne.text.trim()?deleteField():ne.text.trim().slice(0,140),noteAt:Date.now()});setMenu(null);setNe(null);say(clear===true?'Note removed':'Note saved ✓')}catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',6000)}};
  const photo=async(fl,t)=>fl&&save({photo:await shrink(fl,true)},t);   // phone-camera-app fallback: assume front camera, so mirror it too
  const loc=t=>navigator.geolocation.getCurrentPosition(p=>save({loc:{lat:p.coords.latitude,lng:p.coords.longitude}},t),()=>say('Location blocked. Use a picture instead.'),{enableHighAccuracy:true,timeout:15000});
@@ -107,7 +107,7 @@ export default function App(){
   if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
   try{await enablePush(u.uid);await notify('DormMate reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
- async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
+ async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','comments','presence','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
  const dlR=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
@@ -123,10 +123,22 @@ export default function App(){
   {off===0&&awayCard}
   <Item data-tour="board"><h3>Cycle leaderboard</h3>{ms.map((m,i)=><div key={m.id} style={{marginTop:12}}><div className="row sp"><span>{i?'':'👑 '}{m.n}</span><b>{dur(m.h)}</b></div><div className="bar"><motion.b initial={{width:0}} animate={{width:m.h/mx*100+'%'}} transition={{duration:.9,delay:.1*i}}/></div></div>)}</Item></List>};
 
- const Dorm=()=><List><h2 style={{margin:'6px 0 12px'}}>Who's home</h2>{members.map(m=>{const l=last(m.id),i=l?.type==='in',al=!i&&l?PX.filter(p=>p.uid===m.id&&p.type==='away'&&p.ts>l.ts).sort((a,b)=>b.ts-a.ts)[0]:null;
+ const grace=+sp.cfg?.wifiGrace||5,VF=owner?Object.values(PRS).filter(p=>p.pending&&p.outAt&&members.some(m=>m.id===p.uid)&&last(p.uid)?.type==='in'&&last(p.uid).ts<=p.outAt&&(p.escalatedAt||Date.now()-p.outAt>=grace*6e4)):[];
+ const PRE=[['Still in the dorm?','Are you still in the dorm? Please time out if you left.'],['Open the app','Please open DormMate when you can.'],['Forgot to time out?','Forgot to time out? Please do it now.']];
+ const Dorm=()=><List><h2 style={{margin:'6px 0 12px'}}>Who's home</h2>
+  {VF.map(v=>{const f=nm(v.uid).split(' ')[0],mins=Math.round((Date.now()-v.outAt)/6e4);return <Item key={v.uid} className="card draft" data-tour="verify"><h3>📴 Please verify: {nm(v.uid)}</h3>
+   <p className="mut" style={{marginBottom:10}}>Left the dorm Wi-Fi at <b style={{color:'var(--ink)'}}>{tm(v.outAt)}</b> ({mins} min ago) and is still timed in. They were reminded, but not timed out.</p>
+   <button className="pri w" style={{marginBottom:8}} disabled={!!vb} onClick={()=>hostAct(v.uid,'timeout','wifi')}>⏱ Time out at {tm(v.outAt)} (when they left)</button>
+   <button className="w" style={{marginBottom:8}} disabled={!!vb} onClick={()=>hostAct(v.uid,'timeout','now')}>Time out now</button>
+   <button className="w" style={{marginBottom:12}} disabled={!!vb} onClick={()=>hostAct(v.uid,'dismiss')}>✓ {f} is still home</button>
+   <label>Send {f} a reminder</label>
+   <div className="fchips" style={{paddingBottom:0}}>{PRE.map(([l,t])=><button key={l} className="fchip" onClick={()=>setVn({...vn,[v.uid]:t})}>{l}</button>)}</div>
+   <input value={vn[v.uid]||''} maxLength={140} placeholder="Or write your own note…" onChange={e=>setVn({...vn,[v.uid]:e.target.value})}/>
+   <button className="w" disabled={!!vb} onClick={()=>hostAct(v.uid,'remind',null,vn[v.uid])}>🔔 Send reminder</button></Item>})}
+  {members.map(m=>{const l=last(m.id),pr=PRS[m.id],i=l?.type==='in',al=!i&&l?PX.filter(p=>p.uid===m.id&&p.type==='away'&&p.ts>l.ts).sort((a,b)=>b.ts-a.ts)[0]:null;
   return <Item key={m.id} className="card row" data-tour={m.id===members[0].id?'dorm':undefined}><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{m.id===sp.ownerId&&<span className="mut"> · host</span>}
-   <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}{l?.auto&&i?' · auto time-in (did not confirm)':''}</div>
-   {al&&<div className="awayline">📍 Confirmed still away · {fmt(al.ts)}</div>}{showN&&l?.note&&<div className="pnote">💬 {l.note}</div>}{showN&&al?.note&&<div className="pnote">💬 {al.note}</div>}</div>{al&&proof(al)}{proof(l)}
+   <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}{l?.auto&&i?' · auto time-in (did not confirm)':''}{i&&pr?.pending?<span className="tag t-pending" style={{marginLeft:6}}>📴 left Wi-Fi {tm(pr.outAt)}</span>:i&&pr?.state==='in'?<span className="tag t-approved" style={{marginLeft:6}}>📶 on Wi-Fi</span>:null}</div>
+   {al&&<div className="awayline">📍 Confirmed still away · {fmt(al.ts)}</div>}{showN&&l?.note&&<div className="pnote">💬 {l.note}</div>}{showN&&al?.note&&<div className="pnote">💬 {al.note}</div>}{showN&&l?.id&&!l.fix&&<button className="sm" style={{marginTop:6}} onClick={()=>openCmt(l)}>💬 {cnt(l.id)||'Comment'}</button>}</div>{al&&proof(al)}{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
   {owner&&<Item><p className="mut">⚙️ Cycle day, invite code, members and the host tools (send a message to everyone) are now in the <b style={{color:'var(--ink)'}}>Settings</b> tab.</p></Item>}
   {A.length>0&&<Item><h3>Announcements</h3>{A.map(a=><div key={a.id} className="note"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p>{owner&&<button className="sm" onClick={()=>delItem('announcements',a.id)}>✕</button>}</div>)}</Item>}
@@ -142,8 +154,8 @@ export default function App(){
   <h3 data-tour="sess" style={{margin:'16px 0 10px'}}>Time logged</h3>
   {S.map((s,i)=><Item key={i}><div className="row sp"><div><b>{nm(s.uid)}</b><div className="mut">{new Date(s.a).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})} · {tm(s.a)} → {s.live?'now':tm(s.b)}{s.fix||s.ip?.fix||s.op?.fix?' · approved fix':''}</div>
    {(s.before||s.after)&&<div className="mut">{s.before?'↩ started last cycle':'continues next cycle ↪'}</div>}</div><b style={{color:'var(--lamp)'}}>{dur((s.cb-s.ca)/36e5)}</b></div>{(s.ip||s.op)&&<div className="row" style={{marginTop:10}}>{proof(s.ip)}{proof(s.op)}</div>}
-   {showN&&[['ip','in'],['op','out']].map(([k,t])=>{const p=s[k];if(!p)return null;const mine=p.id&&p.uid===u.uid&&!p.fix&&!p.auto;if(!p.note&&!mine)return null;
-    return <div key={k} className="pnote row sp"><span>{t==='in'?'🟢':'🔴'} {p.note?`“${p.note}”`:<span className="mut">No note</span>}</span>{mine&&<button className="sm" onClick={()=>{setNe({id:p.id,type:t,ts:p.ts,text:p.note||'',had:!!p.note});setMenu('note')}}>{p.note?'✏️':'＋ Note'}</button>}</div>})}</Item>)}
+   {showN&&[['ip','in'],['op','out']].map(([k,t])=>{const p=s[k];if(!p||!p.id||p.fix)return null;const mine=p.uid===u.uid,n=cnt(p.id);
+    return <div key={k} className="pnote row sp"><span>{t==='in'?'🟢':'🔴'} {p.note?`“${p.note}”`:<span className="mut">{t==='in'?'Time in':'Time out'}</span>}</span><span className="row" style={{gap:6}}><button className="sm" onClick={()=>openCmt(p)}>💬 {n||''}</button>{mine&&<button className="sm" onClick={()=>{setNe({id:p.id,type:t,ts:p.ts,text:p.note||'',had:!!p.note});setMenu('note')}}>{p.note?'✏️':'＋ Note'}</button>}</span></div>})}</Item>)}
   {!S.length&&<Item><span className="mut">No time logged this cycle.</span></Item>}</List>};
 
  const Bills=()=>{const key=String(r[0]),pub=B.find(x=>x.id===key)||{},dr=owner?BD.find(x=>x.id===key):null,b=dr?{...pub,...dr}:pub,isDraft=!!dr,ps=b.ps??r[0],pe=b.pe??r[1]-864e5,rg=[ps,pe+864e5],days=Math.max(1,Math.round((rg[1]-rg[0])/864e5)),rangeH=days*24;
@@ -220,7 +232,7 @@ export default function App(){
 
  const V={home:Home,dorm:Dorm,history:History,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills'],['settings','⚙️','Settings']],
   fxp={u,sp,owner,members,nm,P:PX,X,B,r,off,setOff,cd,say,col,ping,zoom:setZoom,showN},
-  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,geoOn,setGeoOn,geoSt,replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
+  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
  return <><main>{orbs}
   <header><button className="hbtn" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
   <AnimatePresence mode="wait"><motion.div key={tab} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-24}} transition={{duration:.18}}>{tab==='fixes'?<Fixes {...fxp}/>:tab==='settings'?<Settings {...stp}/>:V[tab]()}</motion.div></AnimatePresence>
@@ -230,6 +242,9 @@ export default function App(){
     <input id="cam" type="file" accept="image/*" capture="user" hidden onChange={e=>photo(e.target.files[0],menu==='away'?'away':undefined)}/>
     <button className="pri w" style={{marginBottom:8}} onClick={()=>setCam(menu==='away'?'away':'punch')}>📸 Take a picture</button><button className="w" onClick={()=>loc(menu==='away'?'away':undefined)}>📍 Send my location</button></>}
    {menu==='note'&&ne&&<><h2>Note for {ne.type==='in'?'time in':'time out'}</h2><p className="mut" style={{margin:'6px 0 12px'}}>{fmt(ne.ts)}</p><input autoFocus maxLength={140} value={ne.text} onChange={e=>setNe({...ne,text:e.target.value})} placeholder="Add a short note"/><button className="pri w" style={{marginBottom:8}} onClick={saveNote}>Save note</button>{ne.had&&<button className="w" onClick={()=>saveNote(true)}>Remove note</button>}</>}
+   {menu==='cmt'&&cm&&(()=>{const L=CM.filter(c=>c.pid===cm.id).sort((a,b)=>a.ts-b.ts);return <><h2>💬 {nm(cm.uid)}'s time {cm.type}</h2><p className="mut" style={{margin:'4px 0 10px'}}>{fmt(cm.ts)}{cm.note?` · “${cm.note}”`:''}</p>
+    <div style={{maxHeight:'40vh',overflow:'auto',marginBottom:10}}>{L.map(c=><div key={c.id} className="pnote"><div className="row sp"><b>{nm(c.uid)}</b><span className="mut">{fmt(c.ts)}</span></div><div>{c.text}</div>{(c.uid===u.uid||owner)&&<button className="sm" style={{marginTop:6}} onClick={()=>deleteDoc(doc(db,'spaces',sp.id,'comments',c.id))}>Delete</button>}</div>)}{!L.length&&<p className="mut">No comments yet. Be the first.</p>}</div>
+    <input value={ctext} maxLength={200} onChange={e=>setCtext(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendCmt()} placeholder="Write a comment…"/><button className="pri w" disabled={!ctext.trim()} onClick={sendCmt}>Send</button></>})()}
    {menu==='spaces'&&<><h2 style={{marginBottom:12}}>Your spaces</h2>{spaces.map(s=><button key={s.id} className={`sp-row ${s.id===sp.id?'cur':''}`} onClick={()=>open(s.id)}><div style={{flex:1}}><b>{s.name}</b><div className="mut">{s.members.length} members{s.ownerId===u.uid?' · you are host':''}</div></div>{s.id===sp.id&&'✓'}</button>)}
     <div className="card row sp" style={{marginTop:12}}><div><div className="mut">Invite code</div><b style={{fontSize:22,letterSpacing:2}}>{sp.code}</b></div><button className="sm" onClick={()=>navigator.clipboard?.writeText(sp.code).then(()=>say('Code copied'))}>Copy</button></div>
     <SpaceForm u={u} open={open} say={say}/></>}
