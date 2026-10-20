@@ -30,7 +30,32 @@ const Range=({a,b})=><div className="tp-bar"><i style={{left:Math.max(0,a)/14.4+
 const fm=m=>{const mm=((m%1440)+1440)%1440,h=Math.floor(mm/60),n=mm%60;return `${h%12||12}:${String(n).padStart(2,'0')} ${h<12?'AM':'PM'}${m>=1440?' · next day':''}`};
 const hmM=t=>/^\d\d:\d\d$/.test(t||'')?+t.slice(0,2)*60+ +t.slice(3,5):NaN;
 
-export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,col,ping,zoom,showN}){
+const sn=v=>v>=1435?1439:Math.round(v/5)*5;                     // snap to 5 minutes, but allow 11:59 PM
+const mm2hm=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const NUD=[[-60,'−1h'],[-15,'−15m'],[-1,'−1m'],[1,'+1m'],[15,'+15m'],[60,'+1h']];
+const TICKS=<div className="tp-t"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11:59 PM</span></div>;
+
+// ONE track with TWO handles: left = time in, right = time out
+function Dual({s,e,cap,act,setAct,onChange}){
+ const pct=v=>v/14.39;
+ return <div className="dual"><div className="dual-track"><i style={{left:pct(s)+'%',width:(pct(e)-pct(s))+'%'}}/></div>
+  <input type="range" min={0} max={cap} step={1} value={s} className={act==='s'?'act':''} onPointerDown={()=>setAct('s')} onChange={x=>onChange(Math.min(sn(+x.target.value),e-5),e)}/>
+  <input type="range" min={0} max={cap} step={1} value={e} className={act==='e'?'act':''} onPointerDown={()=>setAct('e')} onChange={x=>onChange(s,Math.max(Math.min(sn(+x.target.value),cap),s+5))}/></div>}
+
+// one "in → out" block: drag the two handles, or tap a time and nudge it with the buttons
+function Block({i,b,cap,act,setAct,onChange,onRemove,fm,label}){
+ const h=act.i===i?act.h:'e';
+ const nudge=d=>h==='s'?onChange({s:Math.max(0,Math.min(b.s+d,b.e-1)),e:b.e}):onChange({s:b.s,e:Math.max(b.s+1,Math.min(b.e+d,cap))});
+ return <div className="blk"><div className="row sp" style={{marginBottom:8}}><b>{label}</b>{onRemove&&<button type="button" className="sm" onClick={onRemove}>🗑 Remove</button>}</div>
+  <div className="row" style={{gap:8,marginBottom:4}}>
+   <button type="button" className={`pill ${act.i===i&&act.h==='s'?'on':''}`} onClick={()=>setAct(i,'s')}>🟢 Time in<b>{fm(b.s)}</b></button>
+   <button type="button" className={`pill ${act.i===i&&act.h==='e'?'on':''}`} onClick={()=>setAct(i,'e')}>🔴 Time out<b>{fm(b.e)}</b></button></div>
+  <Dual s={b.s} e={b.e} cap={cap} act={act.i===i?act.h:null} setAct={x=>setAct(i,x)} onChange={(s,e)=>onChange({s,e})}/>
+  {TICKS}
+  <p className="mut" style={{fontSize:11,margin:'0 0 6px'}}>The buttons below change the <b>{h==='s'?'time in':'time out'}</b>. Tap a time above to switch.</p>
+  <div className="tp-b">{NUD.map(([d,l])=><button type="button" key={l} onClick={()=>nudge(d)}>{l}</button>)}</div></div>}
+
+export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,col,ping,zoom,showN,presets=[],savePresets}){
  const cfg=sp.cfg||{},now=Date.now(),sid=sp.id,maxD=cfg.fixMaxDays||31,oldest=!owner&&cfg.fixBackDays>0?+dayAt(now,-cfg.fixBackDays):0,auto=owner&&cfg.hostAuto!==false;
  const [fw,setFw]=useState(owner?'all':u.uid),[fs,setFs]=useState('all'),[ex,setEx]=useState({}),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[busy,setBusy]=useState(false),[vu,setVu]=useState(u.uid),[more,setMore]=useState(false);
  // host can look at any member's punches (counter-check). Changes made while looking at someone else are SUGGESTIONS that member must accept.
@@ -69,7 +94,12 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
  const send=async()=>{if(busy)return;const d0=dy,t0=Date.now(),reason=ef.r.trim();
   if(cfg.needReason!==false&&!reason)return say('Add a short reason.');
   const mk=o=>({uid:tu,v:2,reason,status:sg?'suggested':'pending',createdAt:t0,cyc:String(cycOf(o.day,cd)),...(sg?{suggestedBy:u.uid}:{}),...o});let docs=[];
-  if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o);
+  if(ef.mode==='inout'&&!ef.multi){const BL=[...(ef.blocks||[])].sort((a,b)=>a.s-b.s),cap=Math.min(1439,Math.floor((t0-d0)/6e4));
+   if(!BL.length||BL.some(b=>!(b.e>b.s)))return say('Each time out must be after its time in.');
+   if(BL.some(b=>b.e>cap))return say("A time out can't be in the future.");
+   if(BL.some((b,k)=>k&&b.s<=BL[k-1].e))return say('Blocks cannot overlap. Leave a gap between a time out and the next time in.',5000);
+   docs=BL.map(b=>{const a=d0+b.s*6e4,z=b.e>=1439?eod(d0):d0+b.e*6e4;return mk({kind:'add',mode:'inout',day:d0,inTs:a,outTs:z,cutA:a,cutB:z})})}
+  else if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o);
    if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>t0+6e4)return say("Time out can't be in the future.");
    const sg=splitDays(a,b);if(sg.length>maxD)return say(`That is ${sg.length} days. The limit per request is ${maxD} days.`,5000);
    docs=sg.map(s=>mk({kind:'add',mode:'inout',day:s.day,inTs:s.a,outTs:s.b,cutA:s.a,cutB:s.b}))}
@@ -85,7 +115,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
   docs.forEach((x,i)=>{if(auto&&!sg){x.status='approved';x.decidedAt=t0+i;x.decidedBy=u.uid}if(docs.length>1){x.batch=head;x.batchN=docs.length}});
   setBusy(true);
   try{const bt=writeBatch(db);docs.forEach((x,i)=>bt.set(refs[i],x));await bt.commit();if(sg)ping({sid,kind:'suggest',id:head});else if(!auto)ping({sid,kind:'fixnew',id:head});
-   setDy(null);setEf(null);buzz();say(sg?`Suggestion sent to ${nm(tu)} ✓ They must accept it`:auto?'Fix applied ✓':docs.length>1?`${docs.length} daily requests sent ✓`:'Request sent ✓')}
+   setDy(null);setEf(null);buzz();say(sg?`Suggestion sent to ${nm(tu)} ✓ They must accept it`:auto?'Fix applied ✓':docs.length>1?`${docs.length} requests sent together ✓`:'Request sent ✓')}
   catch(e){say('Failed: '+e.message,5000)}finally{setBusy(false)}};
 
  // ---------- day sheet ----------
@@ -104,16 +134,34 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
     <button className="w" onClick={()=>setEf(null)}>Back</button></>;
 
    let pv=null,ok=true,hint=null,form=null;
-   if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o),sg=a>0&&b>a?splitDays(a,b):[],tot=sg.reduce((t,s)=>t+s.b-s.a,0)/36e5;
+   if(ef.mode==='inout'&&!ef.multi){
+    const cap=Math.min(1439,capM),BL=ef.blocks||[],act=ef.act||{i:0,h:'s'},srt=[...BL].sort((a,b)=>a.s-b.s);
+    const err=!BL.length?'Add at least one time in / out.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?"A time out can't be in the future.":srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
+    ok=!err;
+    const tot=srt.reduce((t,b)=>t+(b.e-b.s),0)/60,setBl=bl=>setEf({...ef,blocks:bl}),setAct=(i,h)=>setEf({...ef,act:{i,h}}),
+     applyPre=p=>{const bl=p.blocks.map(([a,z])=>({s:a,e:Math.min(z,cap)})).filter(b=>b.e>b.s&&b.s<cap);if(!bl.length)return say('That preset does not fit before the current time.',4000);setEf({...ef,blocks:bl,act:{i:0,h:'s'}})},
+     addBlock=()=>{const last=srt.at(-1),st=last?last.e+30:0;if(st>=cap-4)return say('There is no room left in this day.',3500);setEf({...ef,blocks:[...BL,{s:st,e:cap}],act:{i:BL.length,h:'s'}})},
+     savePre=async()=>{const name=(ef.pname||'').trim();if(!name)return say('Give the preset a name.');if(!savePresets)return;try{await savePresets([...presets,{id:Date.now().toString(36),name:name.slice(0,24),blocks:srt.map(b=>[b.s,b.e])}].slice(-8));setEf({...ef,pname:null});say('Preset saved ✓')}catch(e){say('Could not save: '+e.message,4000)}};
+    form=<>
+     <div className="row sp" style={{marginBottom:6}}><b>Presets</b>{presets.length>0&&<button type="button" className="sm" onClick={()=>setEf({...ef,pedit:!ef.pedit})}>{ef.pedit?'Done':'Edit'}</button>}</div>
+     <div className="fchips" style={{paddingBottom:4}}>{[{id:'full',name:'Full day',blocks:[[0,1439]]},...presets].map(p=><span key={p.id} style={{display:'inline-flex',gap:2}}><button type="button" className="fchip" title={p.blocks.map(([a,z])=>fm(a)+' to '+fm(z)).join(', ')} onClick={()=>applyPre(p)}>{p.name}</button>{ef.pedit&&p.id!=='full'&&<button type="button" className="fchip" onClick={()=>savePresets(presets.filter(x=>x.id!==p.id))}>✕</button>}</span>)}</div>
+     {ef.pname==null?<button type="button" className="sm w" style={{marginBottom:12}} onClick={()=>setEf({...ef,pname:''})}>＋ Save these times as a preset</button>
+      :<div className="row" style={{marginBottom:12}}><input style={{margin:0,flex:1}} maxLength={24} autoFocus placeholder="Preset name, e.g. Class day" value={ef.pname} onChange={e=>setEf({...ef,pname:e.target.value})}/><button type="button" className="pri sm" onClick={savePre}>Save</button></div>}
+     {BL.map((b,i)=>ef.typed
+      ?<div key={i} className="blk"><div className="row sp" style={{marginBottom:6}}><b>Block {i+1}</b>{BL.length>1&&<button type="button" className="sm" onClick={()=>setBl(BL.filter((_,k)=>k!==i))}>🗑 Remove</button>}</div>
+        <div className="row" style={{gap:8}}><div style={{flex:1}}><label>Time in</label><input type="time" value={mm2hm(b.s)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m))setBl(BL.map((x,k)=>k===i?{...x,s:m}:x))}}/></div><div style={{flex:1}}><label>Time out</label><input type="time" value={mm2hm(b.e)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m))setBl(BL.map((x,k)=>k===i?{...x,e:m}:x))}}/></div></div></div>
+      :<Block key={i} i={i} label={`Block ${i+1}`} b={b} cap={cap} act={act} setAct={setAct} fm={fm} onChange={nb=>setBl(BL.map((x,k)=>k===i?nb:x))} onRemove={BL.length>1?()=>setBl(BL.filter((_,k)=>k!==i)):null}/>)}
+     <button type="button" className="w" style={{marginBottom:10}} onClick={addBlock}>＋ Add another time in / out</button>
+     <div className="row" style={{gap:8,marginBottom:10}}><button type="button" className="sm" style={{flex:1}} onClick={()=>setEf({...ef,typed:!ef.typed})}>{ef.typed?'🎚 Use sliders':'⌨️ Type exact times'}</button><button type="button" className="sm" style={{flex:1}} onClick={()=>setEf({mode:'inout',multi:true,i:iso(d0),o:iso(Math.min(eod(d0),now)),r:ef.r})}>📅 Span several days</button></div></>;
+    hint='Add one block for each stretch you were in the dorm. Example: in 12:00 AM to 7:00 AM, out until 7:00 PM, then in 7:00 PM to 11:59 PM is two blocks. Times between blocks are left as they are. Once approved, each block replaces any punches inside its window.';
+    pv=err?<div className="pv bad">{err}</div>:<div className="pv"><div className="row sp"><b>{srt.length} block{srt.length>1?'s':''}</b><b>{dur(tot)}</b></div>
+      <div className="tp-bar" style={{margin:'8px 0'}}>{srt.map((b,k)=><i key={k} style={{left:b.s/14.4+'%',width:(b.e-b.s)/14.4+'%'}}/>)}</div>
+      {srt.map((b,k)=><div key={k} className="row sp mut"><span>🟢 In {fm(b.s)}</span><span>🔴 Out {fm(b.e)}</span></div>)}
+      {srt.length>1&&<p className="mut" style={{margin:'6px 0 0'}}>Sent together as {srt.length} requests. The host can approve them all at once, or one by one.</p>}</div>}
+   else if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o),sg=a>0&&b>a?splitDays(a,b):[],tot=sg.reduce((t,s)=>t+s.b-s.a,0)/36e5;
     ok=sg.length>0&&sg.length<=maxD;
-    const mi=Math.round((a-d0)/6e4),mo=Math.round((b-d0)/6e4),sl=!ef.typed&&mi>=0&&mi<1440&&mo>0&&mo<=2879;   // sliders work inside this day (the time out may run into the next day)
-    form=sl?<>
-      <TimePick label="Time in" v={mi} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,i:iso(d0+m*6e4),o:m>=mo?iso(d0+Math.min(capM,m+15)*6e4):ef.o})}/>
-      <TimePick label="Time out" v={mo} max={Math.min(2879,capM)} fm={fm} ticks={false} onChange={m=>setEf({...ef,o:iso(d0+m*6e4),i:m<=mi?iso(d0+Math.max(0,m-15)*6e4):ef.i})}/>
-      <Range a={mi} b={mo}/>
-      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact date & time instead</button></>
-     :<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>
-      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false,i:iso(d0),o:iso(Math.min(eod(d0),now))})}>🎚 Use the sliders (this day)</button></>;
+    form=<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>
+      <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({mode:'inout',blocks:[{s:0,e:Math.min(1439,capM)}],act:{i:0,h:'s'},r:ef.r})}>↩ Back to one day (time in / out blocks)</button></>;
     hint='Starts at 12:00 AM and ends at 11:59 PM by default, change it if needed. Once approved, this replaces any punches inside that window. For several days, set the time in on the first day and the time out on the last day.';
     pv=!sg.length?<div className="pv bad">Time out must be after time in.</div>:sg.length>maxD?<div className="pv bad">That is {sg.length} days. The limit per request is {maxD} days.</div>
      :<div className="pv"><div className="row sp"><b>{sg.length>1?`${sg.length} days`:'1 day'}</b><b>{dur(tot)}</b></div>
@@ -129,9 +177,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
     pv=<div className={`pv ${c.ok?'':'bad'}`}>{c.msg}</div>}
    else if(ef.mode==='edit'){const A=at(d0,ef.ti),B2=at(d0,ef.to);ok=A>0&&B2>A;
     form=<><div className="sess"><span className="mut">Current</span><div><b>{span(ef.s)}</b></div></div>{!ef.typed&&Number.isFinite(hmM(ef.ti))&&Number.isFinite(hmM(ef.to))?<>
-      <TimePick label="Time in" v={hmM(ef.ti)} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,ti:hm(d0+m*6e4),to:m>=hmM(ef.to)?hm(d0+Math.min(1439,capM,m+15)*6e4):ef.to})}/>
-      <TimePick label="Time out" v={hmM(ef.to)} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,to:hm(d0+m*6e4),ti:m<=hmM(ef.ti)?hm(d0+Math.max(0,m-15)*6e4):ef.ti})}/>
-      <Range a={hmM(ef.ti)} b={hmM(ef.to)}/>
+      <Block i={0} label="Session" b={{s:hmM(ef.ti),e:hmM(ef.to)}} cap={Math.min(1439,capM)} act={ef.act||{i:0,h:'s'}} setAct={(i,h)=>setEf({...ef,act:{i,h}})} fm={fm} onChange={nb=>setEf({...ef,ti:mm2hm(nb.s),to:mm2hm(nb.e)})}/>
       <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact times instead</button></>
      :<><label>Time in</label><input type="time" value={ef.ti} onChange={e=>setEf({...ef,ti:e.target.value})}/><label>Time out</label><input type="time" value={ef.to} onChange={e=>setEf({...ef,to:e.target.value})}/>
       <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false})}>🎚 Use the sliders</button></>}</>;
@@ -155,7 +201,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    {LK?<div className="warn">🔒 Fix requests are closed for this day{d0<oldest?` (members can go back ${cfg.fixBackDays} days)`:''}.</div>
    :<><h3 style={{margin:'14px 0 10px',fontSize:16}}>What do you need to fix?</h3><div className="tiles">
      {tile('edit','✏️','Edit','Change a session’s times',()=>edits.length===1?startEdit(edits[0]):edits.length?setEf({mode:'pick'}):say('No session to edit on this day. Use one of the add options.',3500),!edits.length)}
-     {tile('inout','⏱','Time in + out','Add a full session or several days',()=>setEf({mode:'inout',i:iso(d0),o:iso(Math.min(eod(d0),now)),r:''}))}
+     {tile('inout','⏱','Time in / out','Add one or more time in / out blocks, or several days',()=>setEf({mode:'inout',blocks:[{s:0,e:Math.min(1439,capM)}],act:{i:0,h:'s'},r:''}))}
      {tile('in','🟢','Time in only','I forgot to time in',()=>setEf({mode:'in',t:'00:00',r:''}))}
      {tile('out','🔴','Time out only','I forgot to time out',()=>setEf({mode:'out',t:eod(d0)>now?hm(now):'23:59',r:''}))}</div></>}</>};
 
@@ -177,7 +223,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
  const single=x=><Item key={x.id}><div className="row sp"><b>{nm(x.uid)}</b><span className={`tag t-${x.status}`}>{x.status}</span></div><p><b>{FIX[x.mode||x.kind||'add']||FIX.add}</b></p>{x.suggestedBy&&<p className="mut">💡 Suggested by {nm(x.suggestedBy)}</p>}{line(x)}<p className="mut">“{x.reason||'no reason'}”</p>{acts(x)}</Item>;
  const group=g=>{const L=g.list,f=L[0],n=s=>L.filter(x=>x.status===s).length,pn=L.filter(x=>x.status==='pending'&&!lockedX(x)),mine=f.uid===u.uid&&L.some(x=>x.status==='pending'),open=!!ex[g.batch];
   return <Item key={g.batch}><div className="row sp"><b>{nm(f.uid)}</b><span className="row" style={{gap:6}}>{['pending','suggested','approved','denied'].filter(s=>n(s)).map(s=><span key={s} className={`tag t-${s}`}>{n(s)} {s}</span>)}</span></div>
-   <p><b>{FIX.add}</b> · {L.length} day{L.length>1?'s':''}</p>{f.suggestedBy&&<p className="mut">💡 Suggested by {nm(f.suggestedBy)}</p>}<p>{fmt(L[0].inTs)} → {fmt(L.at(-1).outTs)}</p><p className="mut">“{f.reason||'no reason'}”</p>
+   <p><b>{FIX.add}</b> · {(()=>{const nd=new Set(L.map(x=>+x.day)).size;return nd===L.length?`${nd} day${nd>1?'s':''}`:`${L.length} time in / out blocks on ${nd} day${nd>1?'s':''}`})()}</p>{f.suggestedBy&&<p className="mut">💡 Suggested by {nm(f.suggestedBy)}</p>}<p>{fmt(L[0].inTs)} → {fmt(L.at(-1).outTs)}</p><p className="mut">“{f.reason||'no reason'}”</p>
    {owner&&pn.length>0&&<div className="row" style={{marginTop:10}}><button className="ok" style={{flex:1}} onClick={()=>decide(pn,'approved')}>Approve all ({pn.length})</button><button className="no" style={{flex:1}} onClick={()=>decide(pn,'denied')}>Deny all ({pn.length})</button></div>}
    {mine&&<button className="sm w" style={{marginTop:10}} onClick={()=>cancel(L)}>Cancel all pending</button>}
    {f.uid===u.uid&&L.some(x=>x.status==='suggested'&&!lockedX(x))&&<div className="row" style={{marginTop:10}}><button className="ok" style={{flex:1}} onClick={()=>respond(L,'approved')}>Accept all</button><button className="no" style={{flex:1}} onClick={()=>respond(L,'denied')}>Decline all</button></div>}
