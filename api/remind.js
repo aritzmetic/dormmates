@@ -12,7 +12,7 @@ export default async function handler(req,res){
     const due=new Map();                 // uid -> minutes left
     const spaces=await db.collection('spaces').get();
     await Promise.all(spaces.docs.map(async s=>{
-      const q=await s.ref.collection('punches').orderBy('ts','desc').limit(300).get();
+      const q=await s.ref.collection('punches').orderBy('ts','desc').limit(150).get();
       const P=q.docs.map(d=>d.data());
       for(const uid of s.data().members||[]){
         const a=away(uid,P,now);

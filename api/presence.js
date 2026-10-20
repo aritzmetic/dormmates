@@ -32,6 +32,7 @@ export default async function handler(req,res){
 
     if(event==='wifi_in'){
       await pres.set({uid,state:'in',inAt:t,ssid:net,pending:false,escalatedAt:null,outAt:null},{merge:true});
+      await db.doc(`pendingWifi/${sid}_${uid}`).delete();
       if(inside)return res.json({ok:true,ignored:'already-timed-in'});
       if(p.wifiAuto===false){const n=await push([uid],{title:`📶 Connected to ${net}`,body:`${sp.name}: you're not timed in yet. Tap to time in.`,url:'/?punch=in',tag:'presence-in'});return res.json({ok:true,asked:true,devices:n})}
       const pu=await sd.ref.collection('punches').add({uid,type:'in',ts:t,wifi:true,ssid:net,pushed:true});
@@ -40,9 +41,10 @@ export default async function handler(req,res){
       return res.json({ok:true,timedIn:true,devices:n});
     }
     // wifi_out
-    if(!inside){await pres.set({uid,state:'out',outAt:t,ssid:net,pending:false,escalatedAt:null},{merge:true});return res.json({ok:true,ignored:'already-timed-out'})}
+    if(!inside){await pres.set({uid,state:'out',outAt:t,ssid:net,pending:false,escalatedAt:null},{merge:true});await db.doc(`pendingWifi/${sid}_${uid}`).delete();return res.json({ok:true,ignored:'already-timed-out'})}
     const cur=(await pres.get()).data(),first=cur?.pending&&cur?.outAt?cur.outAt:t;   // keep the FIRST disconnect time
     await pres.set({uid,state:'out',outAt:first,ssid:net,pending:true,escalatedAt:cur?.pending?(cur.escalatedAt||null):null},{merge:true});
+    if(!(cur?.pending&&cur?.escalatedAt))await db.doc(`pendingWifi/${sid}_${uid}`).set({sid,uid,outAt:first,graceMs:(+sp.cfg?.wifiGrace||5)*60e3});   // the timer watches this list
     const n=await push([uid],{title:`📴 You left ${net}`,body:`${sp.name}: don't forget to time out. DormMate did not time you out. Ignore this if you are still home.`,url:'/?punch=out',tag:'wifi-out'});
     res.json({ok:true,reminded:n>0,recordedAt:first,devices:n})
   }catch(e){console.error(e);res.status(500).json({error:'server error'})}
