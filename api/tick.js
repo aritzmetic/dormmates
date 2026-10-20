@@ -65,6 +65,7 @@ export default async function handler(req,res){
 
     // 1c) disconnected from the dorm Wi-Fi but still timed in after the grace period -> ask the HOST to verify.
     //     api/presence.js puts one tiny document per pending person in `pendingWifi`, so this costs ONE read when nobody is pending.
+    const groups=new Map();
     for(const d of (await db.collection('pendingWifi').get()).docs){const w=d.data();
       if(!w.outAt||Date.now()-w.outAt<(w.graceMs||3e5))continue;
       const sref=db.doc(`spaces/${w.sid}`),sd=await sref.get();if(!sd.exists){await d.ref.delete();continue}
@@ -72,10 +73,14 @@ export default async function handler(req,res){
       if(last?.type!=='in'||last.ts>w.outAt){await pres.set({pending:false,resolved:'auto-clear'},{merge:true});await d.ref.delete();continue}   // they timed out / reconnected meanwhile
       await pres.set({escalatedAt:Date.now()},{merge:true});await d.ref.delete();   // claim first
       const ago=Math.round((Date.now()-w.outAt)/6e4),name=who(sp,w.uid);
-      await push([sp.ownerId],w.uid===sp.ownerId
-        ?{title:'📴 Still timed in?',body:`You left the dorm Wi-Fi ${ago} min ago and are still timed in. Open DormMate to time out.`,url:'/?punch=out',tag:'verify-'+w.uid}
-        :{title:`📴 ${name} left the dorm Wi-Fi`,body:`${ago} min ago, and ${name} is still timed in. Did they leave? Tap to verify.`,url:'/?verify=1',tag:'verify-'+w.uid});
-      out.verify=(out.verify||0)+1}
+      if(w.uid===sp.ownerId){await push([sp.ownerId],{title:'📴 Still timed in?',body:`You left the dorm Wi-Fi ${ago} min ago and are still timed in. Open DormMate to time out.`,url:'/?punch=out',tag:'verify-'+w.uid});out.verify=(out.verify||0)+1;continue}
+      const g=groups.get(w.sid)||{sp,names:[],ago:0};g.names.push(name);g.ago=Math.max(g.ago,ago);groups.set(w.sid,g)}
+    // several members can be waiting at once: the host gets ONE notification per space and handles them from a list
+    for(const[sid,g]of groups){
+      await push([g.sp.ownerId],g.names.length===1
+        ?{title:`📴 ${g.names[0]} left the dorm Wi-Fi`,body:`${g.ago} min ago, and ${g.names[0]} is still timed in. Did they leave? Tap to verify.`,url:'/?verify=1',tag:'verify-'+sid}
+        :{title:`📴 ${g.names.length} members left the dorm Wi-Fi`,body:`${g.names.join(', ')} are still timed in. Tap to review the list and choose what to do.`,url:'/?verify=1',tag:'verify-'+sid});
+      out.verify=(out.verify||0)+g.names.length}
 
     // 2) daily 9:00 AM: bill due + fix deadline reminders
     if(mins>=540&&mins<560&&(await slots()).dueDay!==today){
