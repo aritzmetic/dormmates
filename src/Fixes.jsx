@@ -35,23 +35,26 @@ const mm2hm=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padSt
 const NUD=[[-60,'−1h'],[-15,'−15m'],[-1,'−1m'],[1,'+1m'],[15,'+15m'],[60,'+1h']];
 const TICKS=<div className="tp-t"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11:59 PM</span></div>;
 
-// ONE track with TWO handles: left = time in, right = time out
-function Dual({s,e,cap,act,setAct,onChange}){
+// ONE track with TWO handles: left = time in, right = time out. The handles stop at `lo` / `hi`, so a block can never enter a range that another block already uses.
+function Dual({s,e,cap,lo=0,hi=cap,taken=[],act,setAct,onChange}){
  const pct=v=>v/14.39;
- return <div className="dual"><div className="dual-track"><i style={{left:pct(s)+'%',width:(pct(e)-pct(s))+'%'}}/></div>
-  <input type="range" min={0} max={cap} step={1} value={s} className={act==='s'?'act':''} onPointerDown={()=>setAct('s')} onChange={x=>onChange(Math.min(sn(+x.target.value),e-5),e)}/>
-  <input type="range" min={0} max={cap} step={1} value={e} className={act==='e'?'act':''} onPointerDown={()=>setAct('e')} onChange={x=>onChange(s,Math.max(Math.min(sn(+x.target.value),cap),s+5))}/></div>}
+ return <div className="dual"><div className="dual-track">
+   {taken.map(([a,z],k)=><i key={k} className="tk" style={{left:pct(a)+'%',width:Math.max(0,pct(z)-pct(a))+'%'}}/>)}
+   <i style={{left:pct(s)+'%',width:(pct(e)-pct(s))+'%'}}/></div>
+  <input type="range" min={0} max={cap} step={1} value={s} className={act==='s'?'act':''} onPointerDown={()=>setAct('s')} onChange={x=>onChange(Math.max(lo,Math.min(sn(+x.target.value),e-5)),e)}/>
+  <input type="range" min={0} max={cap} step={1} value={e} className={act==='e'?'act':''} onPointerDown={()=>setAct('e')} onChange={x=>onChange(s,Math.min(hi,cap,Math.max(sn(+x.target.value),s+5)))}/></div>}
 
 // one "in → out" block: drag the two handles, or tap a time and nudge it with the buttons
-function Block({i,b,cap,act,setAct,onChange,onRemove,fm,label}){
+function Block({i,b,cap,lo=0,hi=cap,taken=[],act,setAct,onChange,onRemove,fm,label}){
  const h=act.i===i?act.h:'e';
- const nudge=d=>h==='s'?onChange({s:Math.max(0,Math.min(b.s+d,b.e-1)),e:b.e}):onChange({s:b.s,e:Math.max(b.s+1,Math.min(b.e+d,cap))});
+ const nudge=d=>h==='s'?onChange({s:Math.max(lo,Math.min(b.s+d,b.e-1)),e:b.e}):onChange({s:b.s,e:Math.max(b.s+1,Math.min(b.e+d,hi,cap))});
  return <div className="blk"><div className="row sp" style={{marginBottom:8}}><b>{label}</b>{onRemove&&<button type="button" className="sm" onClick={onRemove}>🗑 Remove</button>}</div>
   <div className="row" style={{gap:8,marginBottom:4}}>
    <button type="button" className={`pill ${act.i===i&&act.h==='s'?'on':''}`} onClick={()=>setAct(i,'s')}>🟢 Time in<b>{fm(b.s)}</b></button>
    <button type="button" className={`pill ${act.i===i&&act.h==='e'?'on':''}`} onClick={()=>setAct(i,'e')}>🔴 Time out<b>{fm(b.e)}</b></button></div>
-  <Dual s={b.s} e={b.e} cap={cap} act={act.i===i?act.h:null} setAct={x=>setAct(i,x)} onChange={(s,e)=>onChange({s,e})}/>
+  <Dual s={b.s} e={b.e} cap={cap} lo={lo} hi={hi} taken={taken} act={act.i===i?act.h:null} setAct={x=>setAct(i,x)} onChange={(s,e)=>onChange({s,e})}/>
   {TICKS}
+  {taken.length>0&&<p className="mut" style={{fontSize:11,margin:'0 0 4px'}}>The striped areas are already used by your other blocks, so you cannot pick a time there.</p>}
   <p className="mut" style={{fontSize:11,margin:'0 0 6px'}}>The buttons below change the <b>{h==='s'?'time in':'time out'}</b>. Tap a time above to switch.</p>
   <div className="tp-b">{NUD.map(([d,l])=><button type="button" key={l} onClick={()=>nudge(d)}>{l}</button>)}</div></div>}
 
@@ -77,12 +80,12 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
  const clearFx=()=>setDoc(bref,{fixDue:deleteField()},{merge:true}).then(()=>say('Deadline removed'));
 
  // ---------- decide / cancel ----------
- const decide=async(list,status)=>{const L=list.filter(x=>x.status==='pending'&&!lockedX(x));
+ const decide=async(list,status)=>{const L=list.filter(x=>x.status==='pending'&&!lockedX(x)).sort((a,b)=>(b.kind==='remove')-(a.kind==='remove'));
   if(!L.length)return say('Nothing to decide here (locked or already decided).');
   if(L.length>1&&!confirm(`${status==='approved'?'Approve':'Deny'} ${L.length} requests?`))return;
   try{const bt=writeBatch(db),t=Date.now();L.forEach((x,i)=>bt.update(xref(x.id),{status,decidedAt:t+i,decidedBy:u.uid}));await bt.commit();
    ping({sid,kind:'fixdecision',id:L[0].id});buzz();say(L.length>1?`${L.length} requests ${status} ✓`:status==='approved'?'Approved ✓':'Denied')}catch(e){say(e.message,5000)}};
- const respond=async(list,status)=>{const L=list.filter(x=>x.status==='suggested'&&x.uid===u.uid&&!lockedX(x));if(!L.length)return say('Nothing to answer here.');
+ const respond=async(list,status)=>{const L=list.filter(x=>x.status==='suggested'&&x.uid===u.uid&&!lockedX(x)).sort((a,b)=>(b.kind==='remove')-(a.kind==='remove'));if(!L.length)return say('Nothing to answer here.');
   try{const bt=writeBatch(db),t=Date.now();L.forEach((x,i)=>bt.update(xref(x.id),{status,decidedAt:t+i,decidedBy:u.uid}));await bt.commit();ping({sid:sp.id,kind:'sugdecision',id:L[0].id});buzz();say(status==='approved'?'Accepted ✓ Your hours were updated':'Declined')}catch(e){say(e.message,5000)}};
  const withdraw=async list=>{try{const bt=writeBatch(db);list.forEach(x=>bt.delete(xref(x.id)));await bt.commit();say('Suggestion withdrawn')}catch(e){say(e.message,5000)}};
  const reopen=x=>updateDoc(xref(x.id),{status:'pending',decidedAt:deleteField(),decidedBy:deleteField(),pushedDecision:deleteField()}).then(()=>say('Moved back to pending')).catch(e=>say(e.message,5000));
@@ -95,10 +98,13 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
   if(cfg.needReason!==false&&!reason)return say('Add a short reason.');
   const mk=o=>({uid:tu,v:2,reason,status:sg?'suggested':'pending',createdAt:t0,cyc:String(cycOf(o.day,cd)),...(sg?{suggestedBy:u.uid}:{}),...o});let docs=[];
   if(ef.mode==='inout'&&!ef.multi){const BL=[...(ef.blocks||[])].sort((a,b)=>a.s-b.s),cap=Math.min(1439,Math.floor((t0-d0)/6e4));
-   if(!BL.length||BL.some(b=>!(b.e>b.s)))return say('Each time out must be after its time in.');
+   if(!BL.length&&!(ef.rm||[]).length)return say('Add a time in / out, or choose a session to remove.');
+   if(BL.some(b=>!(b.e>b.s)))return say('Each time out must be after its time in.');
    if(BL.some(b=>b.e>cap))return say("A time out can't be in the future.");
    if(BL.some((b,k)=>k&&b.s<=BL[k-1].e))return say('Blocks cannot overlap. Leave a gap between a time out and the next time in.',5000);
-   docs=BL.map(b=>{const a=d0+b.s*6e4,z=b.e>=1439?eod(d0):d0+b.e*6e4;return mk({kind:'add',mode:'inout',day:d0,inTs:a,outTs:z,cutA:a,cutB:z})})}
+   docs=BL.map(b=>{const a=d0+b.s*6e4,z=b.e>=1439?eod(d0):d0+b.e*6e4;return mk({kind:'add',mode:'inout',day:d0,inTs:a,outTs:z,cutA:a,cutB:z})});
+   // sessions the user ticked to remove go in the SAME request, and always first, so they are applied before the replacement blocks
+   docs.unshift(...(ef.rm||[]).map(k=>{const[ca,cb]=k.split('-').map(Number);return mk({kind:'remove',mode:'remove',day:d0,inTs:ca,outTs:cb,cutA:ca,cutB:cb,origA:ca,origB:cb})}))}
   else if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o);
    if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>t0+6e4)return say("Time out can't be in the future.");
    const sg=splitDays(a,b);if(sg.length>maxD)return say(`That is ${sg.length} days. The limit per request is ${maxD} days.`,5000);
@@ -115,7 +121,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
   docs.forEach((x,i)=>{if(auto&&!sg){x.status='approved';x.decidedAt=t0+i;x.decidedBy=u.uid}if(docs.length>1){x.batch=head;x.batchN=docs.length}});
   setBusy(true);
   try{const bt=writeBatch(db);docs.forEach((x,i)=>bt.set(refs[i],x));await bt.commit();if(sg)ping({sid,kind:'suggest',id:head});else if(!auto)ping({sid,kind:'fixnew',id:head});
-   setDy(null);setEf(null);buzz();say(sg?`Suggestion sent to ${nm(tu)} ✓ They must accept it`:auto?'Fix applied ✓':docs.length>1?`${docs.length} requests sent together ✓`:'Request sent ✓')}
+   setDy(null);setEf(null);buzz();say(sg?`Suggestion sent to ${nm(tu)} ✓ They must accept it`:auto?'Fix applied ✓':docs.length>1?`Request sent ✓ (${docs.length} changes together)`:'Request sent ✓')}
   catch(e){say('Failed: '+e.message,5000)}finally{setBusy(false)}};
 
  // ---------- day sheet ----------
@@ -136,11 +142,13 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    let pv=null,ok=true,hint=null,form=null;
    if(ef.mode==='inout'&&!ef.multi){
     const cap=Math.min(1439,capM),BL=ef.blocks||[],act=ef.act||{i:0,h:'s'},srt=[...BL].sort((a,b)=>a.s-b.s);
-    const err=!BL.length?'Add at least one time in / out.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?"A time out can't be in the future.":srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
+    const rm=ef.rm||[],err=!BL.length&&!rm.length?'Add a time in / out, or choose a session to remove.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?"A time out can't be in the future.":srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
     ok=!err;
     const tot=srt.reduce((t,b)=>t+(b.e-b.s),0)/60,setBl=bl=>setEf({...ef,blocks:bl}),setAct=(i,h)=>setEf({...ef,act:{i,h}}),
      applyPre=p=>{const bl=p.blocks.map(([a,z])=>({s:a,e:Math.min(z,cap)})).filter(b=>b.e>b.s&&b.s<cap);if(!bl.length)return say('That preset does not fit before the current time.',4000);setEf({...ef,blocks:bl,act:{i:0,h:'s'}})},
-     addBlock=()=>{const last=srt.at(-1),st=last?last.e+30:0;if(st>=cap-4)return say('There is no room left in this day.',3500);setEf({...ef,blocks:[...BL,{s:st,e:cap}],act:{i:BL.length,h:'s'}})},
+     bounds=i=>{const b=BL[i];let lo=0,hi=cap;const taken=[];BL.forEach((o,k)=>{if(k===i)return;taken.push([o.s,o.e]);if(o.s<b.s)lo=Math.max(lo,o.e+1);else hi=Math.min(hi,o.s-1)});return{lo,hi,taken}},
+     addBlock=()=>{let st=0,best=null;[...srt,{s:cap+2,e:cap+2}].forEach(b=>{const g=[st,Math.min(b.s-1,cap)];if(g[1]-g[0]>=10&&(!best||g[1]-g[0]>best[1]-best[0]))best=g;st=Math.max(st,b.e+1)});
+      if(!best)return say('There is no free time left in this day.',3500);const nb=[...BL,{s:best[0],e:best[1]}].sort((a,b)=>a.s-b.s);setEf({...ef,blocks:nb,act:{i:nb.findIndex(x=>x.s===best[0]),h:'s'}})},
      savePre=async()=>{const name=(ef.pname||'').trim();if(!name)return say('Give the preset a name.');if(!savePresets)return;try{await savePresets([...presets,{id:Date.now().toString(36),name:name.slice(0,24),blocks:srt.map(b=>[b.s,b.e])}].slice(-8));setEf({...ef,pname:null});say('Preset saved ✓')}catch(e){say('Could not save: '+e.message,4000)}};
     form=<>
      <div className="row sp" style={{marginBottom:6}}><b>Presets</b>{presets.length>0&&<button type="button" className="sm" onClick={()=>setEf({...ef,pedit:!ef.pedit})}>{ef.pedit?'Done':'Edit'}</button>}</div>
@@ -148,16 +156,19 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
      {ef.pname==null?<button type="button" className="sm w" style={{marginBottom:12}} onClick={()=>setEf({...ef,pname:''})}>＋ Save these times as a preset</button>
       :<div className="row" style={{marginBottom:12}}><input style={{margin:0,flex:1}} maxLength={24} autoFocus placeholder="Preset name, e.g. Class day" value={ef.pname} onChange={e=>setEf({...ef,pname:e.target.value})}/><button type="button" className="pri sm" onClick={savePre}>Save</button></div>}
      {BL.map((b,i)=>ef.typed
-      ?<div key={i} className="blk"><div className="row sp" style={{marginBottom:6}}><b>Block {i+1}</b>{BL.length>1&&<button type="button" className="sm" onClick={()=>setBl(BL.filter((_,k)=>k!==i))}>🗑 Remove</button>}</div>
-        <div className="row" style={{gap:8}}><div style={{flex:1}}><label>Time in</label><input type="time" value={mm2hm(b.s)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m))setBl(BL.map((x,k)=>k===i?{...x,s:m}:x))}}/></div><div style={{flex:1}}><label>Time out</label><input type="time" value={mm2hm(b.e)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m))setBl(BL.map((x,k)=>k===i?{...x,e:m}:x))}}/></div></div></div>
-      :<Block key={i} i={i} label={`Block ${i+1}`} b={b} cap={cap} act={act} setAct={setAct} fm={fm} onChange={nb=>setBl(BL.map((x,k)=>k===i?nb:x))} onRemove={BL.length>1?()=>setBl(BL.filter((_,k)=>k!==i)):null}/>)}
+      ?<div key={i} className="blk"><div className="row sp" style={{marginBottom:6}}><b>Block {i+1}</b>{(BL.length>1||rm.length>0)&&<button type="button" className="sm" onClick={()=>setBl(BL.filter((_,k)=>k!==i))}>🗑 Remove</button>}</div>
+        <div className="row" style={{gap:8}}><div style={{flex:1}}><label>Time in</label><input type="time" value={mm2hm(b.s)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m)){const{lo}=bounds(i);setBl(BL.map((x,k)=>k===i?{...x,s:Math.max(lo,Math.min(m,x.e-1))}:x))}}}/></div><div style={{flex:1}}><label>Time out</label><input type="time" value={mm2hm(b.e)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m)){const{hi}=bounds(i);setBl(BL.map((x,k)=>k===i?{...x,e:Math.min(hi,Math.max(m,x.s+1))}:x))}}}/></div></div></div>
+      :<Block key={i} i={i} label={`Block ${i+1}`} b={b} cap={cap} {...bounds(i)} act={act} setAct={setAct} fm={fm} onChange={nb=>setBl(BL.map((x,k)=>k===i?nb:x))} onRemove={BL.length>1||rm.length>0?()=>setBl(BL.filter((_,k)=>k!==i)):null}/>)}
      <button type="button" className="w" style={{marginBottom:10}} onClick={addBlock}>＋ Add another time in / out</button>
+     {SS.filter(x=>!x.live).length>0&&<div className="blk"><b>Replace existing sessions?</b><p className="mut" style={{margin:'4px 0 8px'}}>Tick a session to remove it. Removing and adding in the same form is sent as <b>one request</b>. Remove without adding anything and it counts as one request too.</p>
+      {SS.filter(x=>!x.live).map(x=>{const k=x.ca+'-'+x.cb;return <label key={k} className="chk"><input type="checkbox" checked={rm.includes(k)} onChange={()=>setEf({...ef,rm:rm.includes(k)?rm.filter(y=>y!==k):[...rm,k]})}/>Remove {span(x)}</label>})}</div>}
      <div className="row" style={{gap:8,marginBottom:10}}><button type="button" className="sm" style={{flex:1}} onClick={()=>setEf({...ef,typed:!ef.typed})}>{ef.typed?'🎚 Use sliders':'⌨️ Type exact times'}</button><button type="button" className="sm" style={{flex:1}} onClick={()=>setEf({mode:'inout',multi:true,i:iso(d0),o:iso(Math.min(eod(d0),now)),r:ef.r})}>📅 Span several days</button></div></>;
     hint='Add one block for each stretch you were in the dorm. Example: in 12:00 AM to 7:00 AM, out until 7:00 PM, then in 7:00 PM to 11:59 PM is two blocks. Times between blocks are left as they are. Once approved, each block replaces any punches inside its window.';
-    pv=err?<div className="pv bad">{err}</div>:<div className="pv"><div className="row sp"><b>{srt.length} block{srt.length>1?'s':''}</b><b>{dur(tot)}</b></div>
+    pv=err?<div className="pv bad">{err}</div>:<div className="pv"><div className="row sp"><b>{srt.length?`${srt.length} block${srt.length>1?'s':''}`:'Remove only'}</b><b>{srt.length?dur(tot):''}</b></div>
+      {rm.map(k=>{const[ca,cb]=k.split('-').map(Number);return <div key={k} className="row sp mut"><span>🗑 Removes</span><span>{tm(ca)} → {tm(cb)}</span></div>})}
       <div className="tp-bar" style={{margin:'8px 0'}}>{srt.map((b,k)=><i key={k} style={{left:b.s/14.4+'%',width:(b.e-b.s)/14.4+'%'}}/>)}</div>
       {srt.map((b,k)=><div key={k} className="row sp mut"><span>🟢 In {fm(b.s)}</span><span>🔴 Out {fm(b.e)}</span></div>)}
-      {srt.length>1&&<p className="mut" style={{margin:'6px 0 0'}}>Sent together as {srt.length} requests. The host can approve them all at once, or one by one.</p>}</div>}
+      {srt.length+rm.length>1&&<p className="mut" style={{margin:'6px 0 0'}}>Everything above is sent as <b>one request</b>. The host approves or denies it in one tap.</p>}</div>}
    else if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o),sg=a>0&&b>a?splitDays(a,b):[],tot=sg.reduce((t,s)=>t+s.b-s.a,0)/36e5;
     ok=sg.length>0&&sg.length<=maxD;
     form=<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>
@@ -183,7 +194,8 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
       <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:false})}>🎚 Use the sliders</button></>}</>;
     hint="Only this day's part of the session changes. Other days are not affected.";
     pv=ok?<div className="pv"><div className="row sp"><b>New time</b><b>{dur((B2-A)/36e5)}</b></div></div>:<div className="pv bad">Time out must be after time in.</div>}
-   else form=<div className="sess"><b>{span(ef.s)}</b><div className="mut">This day's part of the session stops counting once approved. Other days are not affected.</div></div>;
+   else form=<><div className="sess"><b>{span(ef.s)}</b><div className="mut">This day's part of the session stops counting once approved. Other days are not affected.</div></div>
+    <button type="button" className="w" style={{marginBottom:10}} onClick={()=>setEf({mode:'inout',blocks:[{s:Math.max(0,Math.round((ef.s.ca-d0)/6e4)),e:ef.s.cb>=d1?1439:Math.min(1439,Math.round((ef.s.cb-d0)/6e4))}],rm:[ef.s.ca+'-'+ef.s.cb],act:{i:0,h:'s'},r:ef.r})}>↻ Replace it with new times instead (still one request)</button></>;
 
    return <><h2>{M}</h2><p className="mut" style={{margin:'6px 0 14px'}}>{title}</p>{form}{hint&&<p className="mut" style={{margin:'0 0 10px'}}>{hint}</p>}{pv}
     <label>Reason{cfg.needReason===false?' (optional)':''}</label><input value={ef.r} placeholder={ef.mode==='remove'?'Pressed time in by mistake…':ef.mode==='in'?'Forgot to time in when I got home…':ef.mode==='out'?'Forgot to time out when I left…':'What happened?'} onChange={e=>setEf({...ef,r:e.target.value})}/>
@@ -223,7 +235,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
  const single=x=><Item key={x.id}><div className="row sp"><b>{nm(x.uid)}</b><span className={`tag t-${x.status}`}>{x.status}</span></div><p><b>{FIX[x.mode||x.kind||'add']||FIX.add}</b></p>{x.suggestedBy&&<p className="mut">💡 Suggested by {nm(x.suggestedBy)}</p>}{line(x)}<p className="mut">“{x.reason||'no reason'}”</p>{acts(x)}</Item>;
  const group=g=>{const L=g.list,f=L[0],n=s=>L.filter(x=>x.status===s).length,pn=L.filter(x=>x.status==='pending'&&!lockedX(x)),mine=f.uid===u.uid&&L.some(x=>x.status==='pending'),open=!!ex[g.batch];
   return <Item key={g.batch}><div className="row sp"><b>{nm(f.uid)}</b><span className="row" style={{gap:6}}>{['pending','suggested','approved','denied'].filter(s=>n(s)).map(s=><span key={s} className={`tag t-${s}`}>{n(s)} {s}</span>)}</span></div>
-   <p><b>{FIX.add}</b> · {(()=>{const nd=new Set(L.map(x=>+x.day)).size;return nd===L.length?`${nd} day${nd>1?'s':''}`:`${L.length} time in / out blocks on ${nd} day${nd>1?'s':''}`})()}</p>{f.suggestedBy&&<p className="mut">💡 Suggested by {nm(f.suggestedBy)}</p>}<p>{fmt(L[0].inTs)} → {fmt(L.at(-1).outTs)}</p><p className="mut">“{f.reason||'no reason'}”</p>
+   {(()=>{const rmN=L.filter(x=>x.kind==='remove').length,adN=L.length-rmN,nd=new Set(L.map(x=>+x.day)).size;return <p><b>{rmN&&adN?'Replace sessions':rmN?(FIX.remove||'Remove'):FIX.add}</b> · {rmN&&adN?`removes ${rmN} session${rmN>1?'s':''}, adds ${adN} block${adN>1?'s':''}`:rmN?`${rmN} session${rmN>1?'s':''}`:nd===L.length?`${nd} day${nd>1?'s':''}`:`${L.length} time in / out blocks on ${nd} day${nd>1?'s':''}`}</p>})()}{f.suggestedBy&&<p className="mut">💡 Suggested by {nm(f.suggestedBy)}</p>}<p>{fmt(L[0].inTs)} → {fmt(L.at(-1).outTs)}</p><p className="mut">“{f.reason||'no reason'}”</p>
    {owner&&pn.length>0&&<div className="row" style={{marginTop:10}}><button className="ok" style={{flex:1}} onClick={()=>decide(pn,'approved')}>Approve all ({pn.length})</button><button className="no" style={{flex:1}} onClick={()=>decide(pn,'denied')}>Deny all ({pn.length})</button></div>}
    {mine&&<button className="sm w" style={{marginTop:10}} onClick={()=>cancel(L)}>Cancel all pending</button>}
    {f.uid===u.uid&&L.some(x=>x.status==='suggested'&&!lockedX(x))&&<div className="row" style={{marginTop:10}}><button className="ok" style={{flex:1}} onClick={()=>respond(L,'approved')}>Accept all</button><button className="no" style={{flex:1}} onClick={()=>respond(L,'denied')}>Decline all</button></div>}

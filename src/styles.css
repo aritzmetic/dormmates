@@ -178,3 +178,19 @@ select{color:var(--ink)}
 .pill{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;border-radius:12px;background:var(--inp);border:1.5px solid var(--line);font-size:12px}
 .pill b{font-size:16px}.pill.on{border-color:var(--lamp);background:#ffc24b22}
 .vf-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--card2);border:1.5px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:8px}
+.dual-track i.tk{background:repeating-linear-gradient(45deg,#8a86a8aa 0 4px,#4a447099 4px 8px);border-radius:0}
+
+/* ---------- notice board rows (no overlapping buttons) ---------- */
+.nrow{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--soft2);padding:12px 0;margin-top:2px}
+.nrow:first-of-type{border-top:0}
+.nrow input[type=checkbox]{flex:none;width:22px;height:22px;margin:2px 0 0}
+.nrow .nbody{flex:1;min-width:0}.nrow .nbody p{margin-top:2px;overflow-wrap:anywhere}
+.nrow .sm{flex:none;position:static;padding:6px 11px}
+.bulkbar{margin:12px 0;padding:12px;border-radius:14px;background:var(--card2)}
+.bulkbtns{display:flex;flex-wrap:wrap;gap:8px}.bulkbtns .sm{position:static;flex:1 1 auto;min-width:88px;padding:9px 10px}
+
+/* ---------- bottom navigation: always pinned to the bottom of the screen ---------- */
+html,body{overscroll-behavior:none}
+main{min-height:100vh;min-height:100dvh}
+nav{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:30;will-change:transform;transition:opacity .15s ease}
+nav.kb{opacity:0;visibility:hidden;pointer-events:none}   /* hidden only while the on-screen keyboard is open */
