@@ -7,12 +7,13 @@ import {motion} from 'framer-motion';
 // An item marked  host:true  is only shown to the host.
 // ---------------------------------------------------------------------------------------------
 export const UPDATES=[
- {v:2,date:'Oct 20, 2026',title:'Quick fix for the last 24 hours',sections:[
-  {h:'Quick fix',items:[
-   ['⚡','Open Fixes → Quick fix to correct anything from the same day or the last 24 hours, even across midnight.'],
-   ['⏪','Change when your CURRENT time in started, earlier or later, even though you are still timed in.'],
-   ['🚫','Cancel a time in you pressed by mistake. It is sent as one request.'],
-   ['➕','Add a session you missed in the last 24 hours.']]},
+ {v:3,date:'Oct 21, 2026',title:'Fixes now stay in the past',sections:[
+  {h:'Fixes',items:[
+   ['🔒','Fixes only cover times older than 24 hours. You can no longer fix today or the last 24 hours, so a fix can never change your current time.'],
+   ['📅','Days inside the last 24 hours are locked (greyed out) in the Fixes calendar. A time unlocks 24 hours after it happened.'],
+   ['⚡','The Quick fix was removed. Forgot to time out just now? Use the normal Time out button.'],
+   ['👥','This applies to everyone, including the host and the host\'s suggestions.']]}]},
+ {v:2,date:'Oct 20, 2026',title:'Updates screen',sections:[
   {h:'Updates',items:[['✨','This pop-up appears whenever something new is added. Open it again any time from Settings → Help.']]}]},
  {v:1,date:'Oct 2026',title:'Everything that arrived recently',sections:[
   {h:'Time in & proof',items:[

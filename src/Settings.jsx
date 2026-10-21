@@ -151,6 +151,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
 
   <Item className="acc-wrap" data-tour="set-fixes">
    <Acc id="fixes" open={open} set={setOpen} icon="📝" title="Fix request rules" sub={`${cfg.hostAuto!==false?'Host fixes auto-approved · ':''}${back} · max ${cfg.fixMaxDays||31} days per request`}>
+    <p className="mut" style={{marginBottom:10}}>🔒 Always on: a fix can only cover times older than 24 hours, so it can never change someone's current time.</p>
     {hostOnly}
     <fieldset disabled={!owner}><form key={JSON.stringify(cfg)} onSubmit={saveFix}>
      <label className="chk"><input type="checkbox" name="ha" defaultChecked={cfg.hostAuto!==false}/>Host's own fixes are approved instantly</label>

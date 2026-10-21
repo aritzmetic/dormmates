@@ -194,3 +194,5 @@ html,body{overscroll-behavior:none}
 main{min-height:100vh;min-height:100dvh}
 nav{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:30;will-change:transform;transition:opacity .15s ease}
 nav.kb{opacity:0;visibility:hidden;pointer-events:none}   /* hidden only while the on-screen keyboard is open */
+.dc.lk{opacity:.45}.dc.lk::before{content:'🔒';position:absolute;top:2px;left:4px;font-size:9px}
+
