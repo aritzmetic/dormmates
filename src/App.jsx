@@ -9,6 +9,7 @@ import ReceiptView from './ReceiptView';
 import Fixes from './Fixes';
 import Settings from './Settings';
 import Tour,{TOUR_V} from './Tour';
+import Updates,{UPDATES,LATEST} from './Updates';
 import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
@@ -34,7 +35,7 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
  const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
- const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[PRS,setPRS]=useState({}),[CM,setCM]=useState([]),[cm,setCm]=useState(null),[ctext,setCtext]=useState(''),[vn,setVn]=useState({}),[vb,setVb]=useState(null),[vfT,setVfT]=useState(null),[bsel,setBsel]=useState(null),[selCm,setSelCm]=useState(false),[pnote,setPnote]=useState(''),[ne,setNe]=useState(null),[hideN,setHideN_]=useState(localStorage.getItem('hideNotes')==='1'),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
+ const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[upd,setUpd]=useState(null),[PRS,setPRS]=useState({}),[CM,setCM]=useState([]),[cm,setCm]=useState(null),[ctext,setCtext]=useState(''),[vn,setVn]=useState({}),[vb,setVb]=useState(null),[vfT,setVfT]=useState(null),[bsel,setBsel]=useState(null),[selCm,setSelCm]=useState(false),[pnote,setPnote]=useState(''),[ne,setNe]=useState(null),[hideN,setHideN_]=useState(localStorage.getItem('hideNotes')==='1'),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
  const setThm=m=>{setTheme(m);setThm_(m)};
  const PX=withFix(P,X); // punches + approved time-in-only / time-out-only fixes
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
@@ -56,7 +57,11 @@ export default function App(){
  useEffect(()=>{if(!u)return;const a=away(u.uid,PX);if(a?.open&&!localStorage.getItem('nf'+a.D)){localStorage.setItem('nf'+a.D,1);const t='Confirm you are still away before 8:00 PM or you will be timed in.';say('⏰ '+t,6000);notify('⏰ Confirm you are away',t)}});
  // guide: shown ONCE to everyone (new and existing) until they confirm; also remembered on this device
  useEffect(()=>{if(u&&PFL&&!(PF?.tourV>=TOUR_V)&&localStorage.getItem('tourV')!==String(TOUR_V))setTour(true)},[u?.uid,PFL,PF?.tourV]);
- const doneTour=async()=>{localStorage.setItem('tourV',TOUR_V);setTour(false);setTab('home');setOff(0);try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,tourV:TOUR_V,tourAt:Date.now()},{merge:true})}catch{}};
+ // "What's new": shown on open to everyone who has not seen the latest update, and only after the How-To guide is finished
+ useEffect(()=>{if(!u||!PFL||tour)return;const done=(PF?.tourV>=TOUR_V)||localStorage.getItem('tourV')===String(TOUR_V);if(!done)return;
+  const seen=Math.max(+PF?.updV||0,+localStorage.getItem('updV')||0);if(seen<LATEST)setUpd({list:UPDATES.filter(x=>x.v>seen),review:false})},[u?.uid,PFL,PF?.updV,PF?.tourV,tour]);
+ const ackUpd=()=>{localStorage.setItem('updV',LATEST);setUpd(null);if(u)setDoc(doc(db,'prefs',u.uid),{uid:u.uid,updV:LATEST,updAt:Date.now()},{merge:true}).catch(()=>{})};
+ const doneTour=async()=>{localStorage.setItem('tourV',TOUR_V);localStorage.setItem('updV',LATEST);setTour(false);setTab('home');setOff(0);try{await setDoc(doc(db,'prefs',u.uid),{uid:u.uid,tourV:TOUR_V,tourAt:Date.now(),updV:LATEST},{merge:true})}catch{}};
  // reminder fallback: while the app is open, fire the reminder locally too (the server push covers a closed app)
  useEffect(()=>{if(!u||!PF||window.Notification?.permission!=='granted')return;const n=new Date(),mins=n.getHours()*60+n.getMinutes(),day=d2s(Date.now()),inside=norm(u.uid,PX).at(-1)?.type==='in';
   if(Array.isArray(PF.days)&&!PF.days.includes(n.getDay()))return;
@@ -79,8 +84,9 @@ export default function App(){
   <motion.h1 initial={{y:30,opacity:0}} animate={{y:0,opacity:1}} transition={{delay:.2}}>Who's home?<br/>Who owes?</motion.h1>
   <p className="mut">Punch in and out, fix missed days, and split the bills by who was actually there.</p>
   <motion.button whileTap={{scale:.95}} className="pri w" onClick={()=>signInWithPopup(auth,gp).catch(e=>say(e.message))}>Continue with Google</motion.button></div>{toast&&<div className="toast">{toast}</div>}</main>;
+ const updEl=upd&&!tour&&<Updates list={upd.list} review={upd.review} owner={sp?.ownerId===u?.uid} onClose={upd.review?()=>setUpd(null):ackUpd}/>;
  const tourEl=tour&&<Tour owner={sp?.ownerId===u.uid} setTab={t=>{setTab(t);setOff(0)}} onDone={doneTour} onLater={()=>{setTour(false);setTab('home')}}/>;
- if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMate</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{tourEl}{toast&&<div className="toast">{toast}</div>}</main>;
+ if(!sp)return <main>{orbs}<header><div className="logo"><i/>DormMate</div><button className="sm" onClick={()=>signOut(auth)}>Sign out</button></header><SpaceForm u={u} open={open} say={say}/>{tourEl}{updEl}{toast&&<div className="toast">{toast}</div>}</main>;
 
  const me={n:u.displayName||'Me',p:u.photoURL||''},owner=sp.ownerId===u.uid,cd=sp.cycleDay||14,r=cyc(off,cd);
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
@@ -242,7 +248,7 @@ export default function App(){
 
  const V={home:Home,dorm:Dorm,history:History,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills'],['settings','⚙️','Settings']],
   fxp={u,sp,owner,members,nm,P:PX,X,B,r,off,setOff,cd,say,col,ping,zoom:setZoom,showN,presets:PF?.fixPresets||[],savePresets:arr=>setDoc(doc(db,'prefs',u.uid),{uid:u.uid,fixPresets:arr},{merge:true})},
-  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
+  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,showUpdates:()=>setUpd({list:UPDATES,review:true}),replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
  return <><main>{orbs}
   <header><button className="hbtn" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
   <AnimatePresence mode="wait"><motion.div key={tab} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-24}} transition={{duration:.18}}>{tab==='fixes'?<Fixes {...fxp}/>:tab==='settings'?<Settings {...stp}/>:V[tab]()}</motion.div></AnimatePresence>
@@ -270,6 +276,7 @@ export default function App(){
   </Sheet>}</AnimatePresence>
   <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
   {tourEl}
+  {updEl}
   {cam&&<Cam onShot={d=>{const t=cam==='away'?'away':undefined;setCam(null);save({photo:d},t)}} onClose={()=>setCam(null)} onFallback={()=>{setCam(null);document.getElementById('cam')?.click()}}/>}
   {owner&&sp.cycleSet===false&&!tour&&<CycleSetup sp={sp} say={say}/>}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>

@@ -22,7 +22,7 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,replayTour}){
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,showUpdates,replayTour}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  const dirty=useRef(null),[saved,setSaved]=useState(false);
@@ -221,9 +221,10 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
    </Acc></Item>
 
   <Item className="acc-wrap" data-tour="set-help">
-   <Acc id="help" open={open} set={setOpen} icon="❓" title="Help" sub="Replay the How-To guide">
+   <Acc id="help" open={open} set={setOpen} icon="❓" title="Help" sub="How-To guide and what's new">
     <p className="mut" style={{marginBottom:10}}>Take the page-by-page tour of the app again whenever you like.</p>
-    <button className="pri w" onClick={replayTour}>▶ Play the How-To guide</button>
+    <button className="pri w" style={{marginBottom:8}} onClick={replayTour}>▶ Play the How-To guide</button>
+    <button className="w" onClick={showUpdates}>✨ What's new</button>
    </Acc></Item>
 
   {owner&&<Item className="acc-wrap" data-tour="set-host">
