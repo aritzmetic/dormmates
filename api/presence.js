@@ -14,13 +14,17 @@ export default async function handler(req,res){
   const q={...req.query,...(req.body&&typeof req.body==='object'?req.body:{})};
   const{uid,sid,key,event,ssid}=q;
   if(!uid||!sid||!key||!event)return res.status(400).json({error:'missing uid, sid, key or event'});
-  if(!['wifi_in','wifi_out','test'].includes(event))return res.status(400).json({error:'unknown event'});
+  if(!['wifi_in','wifi_out','test','status'].includes(event))return res.status(400).json({error:'unknown event'});
+  const pr=db.doc(`prefs/${uid}`);
   try{
-    const pr=db.doc(`prefs/${uid}`),p=(await pr.get()).data();
+    const p=(await pr.get()).data();
     if(!p?.autoKey||!timingSafeEqual(h(p.autoKey),h(key)))return res.status(401).json({error:'unauthorized'});
     const sd=await db.doc(`spaces/${sid}`).get(),sp=sd.data();
     if(!sp||!(sp.members||[]).includes(uid))return res.status(404).json({error:'not a member of this space'});
     const wifi=sp.cfg?.wifi||[];
+    if(event==='status'){   // read-only check used by Settings → "Check my connection"
+      const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data()),last=norm(uid,rows,Date.now()).at(-1);
+      return res.json({ok:true,space:sp.name,host:sp.ownerId===uid,timedIn:last?.type==='in',lastPunch:last?{type:last.type,at:last.ts,auto:!!last.auto,wifi:!!last.wifi}:null,wifi,wifiAuto:p.wifiAuto!==false,grace:+sp.cfg?.wifiGrace||5,last:p.lastPresence||null})}
     if(event==='test'){const n=await push([uid],{title:'✅ Auto-detect works',body:`${sp.name}: your phone can reach DormMate. Connecting to the dorm Wi-Fi will time you in automatically.`,tag:'presence-test'});return res.json({ok:true,devices:n})}
     // if the automation sends the network name, only the dorm's Wi-Fi counts
     if(ssid&&wifi.length&&!wifi.some(w=>w.toLowerCase()===String(ssid).toLowerCase()))return res.json({ok:true,ignored:'other-network'});
@@ -29,23 +33,25 @@ export default async function handler(req,res){
 
     const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data());
     const inside=norm(uid,rows,Date.now()).at(-1)?.type==='in',t=Date.now(),net=ssid||wifi[0]||'the dorm Wi-Fi',pres=sd.ref.collection('presence').doc(uid);
+    // remember what happened, so Settings can show "last signal from your phone" and why nothing changed
+    const fin=async(j,r)=>{await pr.set({lastPresence:{event,at:Date.now(),result:r,ssid:net}},{merge:true});return res.json(j)};
 
     if(event==='wifi_in'){
       await pres.set({uid,state:'in',inAt:t,ssid:net,pending:false,escalatedAt:null,outAt:null},{merge:true});
       await db.doc(`pendingWifi/${sid}_${uid}`).delete();
-      if(inside)return res.json({ok:true,ignored:'already-timed-in'});
-      if(p.wifiAuto===false){const n=await push([uid],{title:`📶 Connected to ${net}`,body:`${sp.name}: you're not timed in yet. Tap to time in.`,url:'/?punch=in',tag:'presence-in'});return res.json({ok:true,asked:true,devices:n})}
+      if(inside)return fin({ok:true,ignored:'already-timed-in'},'already-timed-in');
+      if(p.wifiAuto===false){const n=await push([uid],{title:`📶 Connected to ${net}`,body:`${sp.name}: you're not timed in yet. Tap to time in.`,url:'/?punch=in',tag:'presence-in'});return fin({ok:true,asked:true,devices:n},'asked')}
       const pu=await sd.ref.collection('punches').add({uid,type:'in',ts:t,wifi:true,ssid:net,pushed:true});
       const n=await push([uid],{title:'📶 You were timed in automatically',body:`You connected to ${net}, so DormMate timed you in at ${tf(t)}. Not home? Open the app to fix it.`,tag:'wifi-in-'+pu.id});
       await push(others(sp,uid),{title:`🏠 ${who(sp,uid)} is home`,body:`Timed in automatically at ${tf(t)} on the dorm Wi-Fi.`,tag:'punch-'+pu.id});
-      return res.json({ok:true,timedIn:true,devices:n});
+      return fin({ok:true,timedIn:true,devices:n},'timed-in');
     }
     // wifi_out
-    if(!inside){await pres.set({uid,state:'out',outAt:t,ssid:net,pending:false,escalatedAt:null},{merge:true});await db.doc(`pendingWifi/${sid}_${uid}`).delete();return res.json({ok:true,ignored:'already-timed-out'})}
+    if(!inside){await pres.set({uid,state:'out',outAt:t,ssid:net,pending:false,escalatedAt:null},{merge:true});await db.doc(`pendingWifi/${sid}_${uid}`).delete();return fin({ok:true,ignored:'already-timed-out'},'already-timed-out')}
     const cur=(await pres.get()).data(),first=cur?.pending&&cur?.outAt?cur.outAt:t;   // keep the FIRST disconnect time
     await pres.set({uid,state:'out',outAt:first,ssid:net,pending:true,escalatedAt:cur?.pending?(cur.escalatedAt||null):null},{merge:true});
     if(!(cur?.pending&&cur?.escalatedAt))await db.doc(`pendingWifi/${sid}_${uid}`).set({sid,uid,outAt:first,graceMs:(+sp.cfg?.wifiGrace||5)*60e3});   // the timer watches this list
     const n=await push([uid],{title:`📴 You left ${net}`,body:`${sp.name}: don't forget to time out. DormMate did not time you out. Ignore this if you are still home.`,url:'/?punch=out',tag:'wifi-out'});
-    res.json({ok:true,reminded:n>0,recordedAt:first,devices:n})
-  }catch(e){console.error(e);res.status(500).json({error:'server error'})}
+    await fin({ok:true,reminded:n>0,recordedAt:first,devices:n},'reminded')
+  }catch(e){console.error(e);try{await pr.set({lastPresence:{event,at:0,failedAt:Date.now(),result:'error'}},{merge:true})}catch{}res.status(500).json({error:'server error'})}
 }
