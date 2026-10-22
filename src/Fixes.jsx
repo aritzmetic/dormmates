@@ -30,6 +30,8 @@ const Range=({a,b})=><div className="tp-bar"><i style={{left:Math.max(0,a)/14.4+
 const fm=m=>{const mm=((m%1440)+1440)%1440,h=Math.floor(mm/60),n=mm%60;return `${h%12||12}:${String(n).padStart(2,'0')} ${h<12?'AM':'PM'}${m>=1440?' · next day':''}`};
 const hmM=t=>/^\d\d:\d\d$/.test(t||'')?+t.slice(0,2)*60+ +t.slice(3,5):NaN;
 
+// presets are stored as [{s,e}] objects (Firestore rejects arrays inside arrays). Older [start,end] pairs are still understood.
+const pb=p=>(p.blocks||[]).map(b=>Array.isArray(b)?{s:b[0],e:b[1]}:{s:+b.s,e:+b.e});
 const sn=v=>v>=1435?1439:Math.round(v/5)*5;                     // snap to 5 minutes, but allow 11:59 PM
 const mm2hm=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 const NUD=[[-60,'−1h'],[-15,'−15m'],[-1,'−1m'],[1,'+1m'],[15,'+15m'],[60,'+1h']];
@@ -148,16 +150,20 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
     const rm=ef.rm||[],err=!BL.length&&!rm.length?'Add a time in / out, or choose a session to remove.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?"Fixes only cover times older than 24 hours.":srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
     ok=!err;
     const tot=srt.reduce((t,b)=>t+(b.e-b.s),0)/60,setBl=bl=>setEf({...ef,blocks:bl}),setAct=(i,h)=>setEf({...ef,act:{i,h}}),
-     applyPre=p=>{const bl=p.blocks.map(([a,z])=>({s:a,e:Math.min(z,cap)})).filter(b=>b.e>b.s&&b.s<cap);if(!bl.length)return say('That preset does not fit before the current time.',4000);setEf({...ef,blocks:bl,act:{i:0,h:'s'}})},
+     applyPre=p=>{const bl=pb(p).map(b=>({s:b.s,e:Math.min(b.e,cap)})).filter(b=>b.e>b.s&&b.s<cap);if(!bl.length)return say('That preset does not fit before the current time.',4000);setEf({...ef,blocks:bl,act:{i:0,h:'s'}})},
      bounds=i=>{const b=BL[i];let lo=0,hi=cap;const taken=[];BL.forEach((o,k)=>{if(k===i)return;taken.push([o.s,o.e]);if(o.s<b.s)lo=Math.max(lo,o.e+1);else hi=Math.min(hi,o.s-1)});return{lo,hi,taken}},
      addBlock=()=>{let st=0,best=null;[...srt,{s:cap+2,e:cap+2}].forEach(b=>{const g=[st,Math.min(b.s-1,cap)];if(g[1]-g[0]>=10&&(!best||g[1]-g[0]>best[1]-best[0]))best=g;st=Math.max(st,b.e+1)});
       if(!best)return say('There is no free time left in this day.',3500);const nb=[...BL,{s:best[0],e:best[1]}].sort((a,b)=>a.s-b.s);setEf({...ef,blocks:nb,act:{i:nb.findIndex(x=>x.s===best[0]),h:'s'}})},
-     savePre=async()=>{const name=(ef.pname||'').trim();if(!name)return say('Give the preset a name.');if(!savePresets)return;try{await savePresets([...presets,{id:Date.now().toString(36),name:name.slice(0,24),blocks:srt.map(b=>[b.s,b.e])}].slice(-8));setEf({...ef,pname:null});say('Preset saved ✓')}catch(e){say('Could not save: '+e.message,4000)}};
+     savePre=async()=>{const name=(ef.pname||'').trim();if(!name)return say('Give the preset a name.');if(!savePresets)return;try{await savePresets([...presets,{id:Date.now().toString(36),name:name.slice(0,24),blocks:srt.map(b=>({s:b.s,e:b.e}))}].slice(-8));setEf({...ef,pname:null});say('Preset saved ✓')}catch(e){say('Could not save: '+e.message,4000)}},
+     delPre=async p=>{if(!confirm(`Delete the preset “${p.name}”?`))return;try{await savePresets(presets.filter(x=>x.id!==p.id));say('Preset deleted')}catch(e){say('Could not delete: '+e.message,4000)}};
     form=<>
-     <div className="row sp" style={{marginBottom:6}}><b>Presets</b>{presets.length>0&&<button type="button" className="sm" onClick={()=>setEf({...ef,pedit:!ef.pedit})}>{ef.pedit?'Done':'Edit'}</button>}</div>
-     <div className="fchips" style={{paddingBottom:4}}>{[{id:'full',name:'Full day',blocks:[[0,1439]]},...presets].map(p=><span key={p.id} style={{display:'inline-flex',gap:2}}><button type="button" className="fchip" title={p.blocks.map(([a,z])=>fm(a)+' to '+fm(z)).join(', ')} onClick={()=>applyPre(p)}>{p.name}</button>{ef.pedit&&p.id!=='full'&&<button type="button" className="fchip" onClick={()=>savePresets(presets.filter(x=>x.id!==p.id))}>✕</button>}</span>)}</div>
+     <b style={{display:'block',marginBottom:6}}>Presets</b>
+     <div className="fchips" style={{paddingBottom:4}}>{[{id:'full',name:'Full day',blocks:[{s:0,e:1439}]},...presets].map(p=><button key={p.id} type="button" className="fchip" onClick={()=>applyPre(p)}>{p.name}</button>)}</div>
      {ef.pname==null?<button type="button" className="sm w" style={{marginBottom:12}} onClick={()=>setEf({...ef,pname:''})}>＋ Save these times as a preset</button>
       :<div className="row" style={{marginBottom:12}}><input style={{margin:0,flex:1}} maxLength={24} autoFocus placeholder="Preset name, e.g. Class day" value={ef.pname} onChange={e=>setEf({...ef,pname:e.target.value})}/><button type="button" className="pri sm" onClick={savePre}>Save</button></div>}
+     {presets.length>0&&<div className="blk"><b>Your presets</b>
+      {presets.map(p=><div key={p.id} className="row sp" style={{padding:'8px 0',borderTop:'1px solid var(--soft2)',gap:8}}><div style={{minWidth:0,flex:1}}><b>{p.name}</b><div className="mut" style={{fontSize:12}}>{pb(p).map(b=>fm(b.s)+' to '+fm(b.e)).join(' · ')}</div></div>
+       <button type="button" className="sm" onClick={()=>applyPre(p)}>Use</button><button type="button" className="sm no" aria-label={`Delete preset ${p.name}`} onClick={()=>delPre(p)}>🗑 Delete</button></div>)}</div>}
      {BL.map((b,i)=>ef.typed
       ?<div key={i} className="blk"><div className="row sp" style={{marginBottom:6}}><b>Block {i+1}</b>{(BL.length>1||rm.length>0)&&<button type="button" className="sm" onClick={()=>setBl(BL.filter((_,k)=>k!==i))}>🗑 Remove</button>}</div>
         <div className="row" style={{gap:8}}><div style={{flex:1}}><label>Time in</label><input type="time" value={mm2hm(b.s)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m)){const{lo}=bounds(i);setBl(BL.map((x,k)=>k===i?{...x,s:Math.max(lo,Math.min(m,x.e-1))}:x))}}}/></div><div style={{flex:1}}><label>Time out</label><input type="time" value={mm2hm(b.e)} onChange={e=>{const m=hmM(e.target.value);if(Number.isFinite(m)){const{hi}=bounds(i);setBl(BL.map((x,k)=>k===i?{...x,e:Math.min(hi,Math.max(m,x.s+1))}:x))}}}/></div></div></div>

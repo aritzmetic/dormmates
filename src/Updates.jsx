@@ -7,6 +7,9 @@ import {motion} from 'framer-motion';
 // An item marked  host:true  is only shown to the host.
 // ---------------------------------------------------------------------------------------------
 export const UPDATES=[
+ {v:4,date:'Oct 22, 2026',title:'Presets and Wi-Fi checks',sections:[
+  {h:'Fixes',items:[['💾','Saving a time in / out preset works again, and every preset now has a Delete button under “Your presets”.']]},
+  {h:'Dorm Wi-Fi',items:[['🔎','Settings → Dorm Wi-Fi now shows the last signal from your phone and has a “Check my connection” button that tells you what the server sees and why nothing changed.']]}]},
  {v:3,date:'Oct 21, 2026',title:'Fixes now stay in the past',sections:[
   {h:'Fixes',items:[
    ['🔒','Fixes only cover times older than 24 hours. You can no longer fix today or the last 24 hours, so a fix can never change your current time.'],
