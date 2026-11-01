@@ -22,7 +22,7 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,showUpdates,replayTour}){
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,showUpdates,replayTour,openBuys}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  const dirty=useRef(null),[saved,setSaved]=useState(false);
@@ -221,6 +221,13 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      <details style={{marginBottom:8}}><summary><b>iPhone setup (Shortcuts app)</b></summary><p className="mut" style={{marginTop:8}}>1. Open Shortcuts → Automation → + → <b>Wi-Fi</b> → choose the dorm network{wifi.length?` (${wifi.join(' or ')})`:''} and tick <b>Connects</b>.<br/>2. Add the action <b>Get Contents of URL</b> and paste the “Connected” link.<br/>3. Choose <b>Run Immediately</b> (not “Ask Before Running”) and save.<br/>4. Make a second automation with <b>Disconnects</b> and the “Disconnected” link.</p></details>
      <details><summary><b>Android setup (MacroDroid, free)</b></summary><p className="mut" style={{marginTop:8}}>1. Install MacroDroid → Add Macro.<br/>2. Trigger: <b>Wi-Fi Connected</b> and pick the dorm network{wifi.length?` (${wifi.join(' or ')})`:''}. Action: <b>HTTP Request</b> → GET → paste the “Connected” link.<br/>3. Make a second macro with <b>Wi-Fi Disconnected</b> and the “Disconnected” link.<br/>4. Set MacroDroid's battery to “Unrestricted” so it can run in the background.</p></details></>
      :<button className="pri w" onClick={mkKey}>Create my personal links</button>}
+   </Acc></Item>
+
+  <Item className="acc-wrap">
+   <Acc id="buys" open={open} set={setOpen} icon="🛒" title={<>Shared buys <span className="beta">BETA</span></>} sub="Rice, water and other things the dorm buys together">
+    <p className="mut" style={{marginBottom:10}}>{owner?'Ask someone to buy rice, water or anything else, set the amount, and split the cost fairly: by how long each person stayed, by days at home, equally, by turn, or with custom amounts. You prepare it privately first. Your dormmates only see it, and get a notification with the result, after you send it.':'Your host can ask someone to buy rice, water or other things for the dorm and split the cost fairly. You get a notification when a request is sent, and you can see your share here.'}</p>
+    <button className="pri w" onClick={openBuys}>Open Shared buys</button>
+    <p className="mut" style={{marginTop:10}}>🧪 Beta: still being tested, so it may change. It does not touch your electric and water bills.</p>
    </Acc></Item>
 
   <Item className="acc-wrap" data-tour="look">

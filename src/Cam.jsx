@@ -5,7 +5,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 //  - back camera: uses the phone's torch (where the browser supports it, e.g. Android Chrome)
 //  - front camera: "screen flash", the screen turns bright white for a moment while the picture is taken
 // The front camera preview and the saved picture are mirrored (selfie look); the back camera is saved normally.
-export default function Cam({onShot,onClose,onFallback}){
+export default function Cam({onShot,onClose,onFallback,onLoc}){
  const v=useRef(),st=useRef(),[face,setFace]=useState('user'),[err,setErr]=useState(''),[ready,setReady]=useState(false),[shot,setShot]=useState(null),
   [flash,setFlash]=useState(localStorage.getItem('camFlash')==='1'),[torch,setTorch]=useState(false),[lit,setLit]=useState(false),[busy,setBusy]=useState(false);
  useEffect(()=>{let dead=false;setReady(false);setErr('');setTorch(false);
@@ -31,7 +31,7 @@ export default function Cam({onShot,onClose,onFallback}){
   }finally{if(tOn){try{await tr.applyConstraints({advanced:[{torch:false}]})}catch{}}setLit(false);setBusy(false)}};
  const noTorch=face==='environment'&&!torch;
  return <div className="cam">
-  {err?<div className="cam-err"><p>{err}</p><button className="pri w" onClick={onFallback}>Use my phone camera app</button><button className="w" style={{marginTop:8}} onClick={onClose}>Cancel</button></div>
+  {err?<div className="cam-err"><p>{err}</p><button className="pri w" onClick={onFallback}>Use my phone camera app</button>{onLoc&&<button className="w" style={{marginTop:8}} onClick={onLoc}>📍 Send my location instead</button>}<button className="w" style={{marginTop:8}} onClick={onClose}>Cancel</button></div>
   :<>
    <video ref={v} className="cam-v" playsInline muted style={{transform:face==='user'?'scaleX(-1)':'none',display:shot?'none':'block'}}/>
    {shot&&<img className="cam-v" src={shot} alt=""/>}
@@ -41,5 +41,6 @@ export default function Cam({onShot,onClose,onFallback}){
       <button className={`sm cam-fl ${flash&&!noTorch?'on':''}`} disabled={noTorch} onClick={toggleFlash} title={noTorch?'This phone does not allow flash for the back camera in a browser':''}>{noTorch?'⚡ No flash':flash?'⚡ Flash on':'⚡ Flash off'}</button>
       <button className="sm" onClick={()=>setFace(face==='user'?'environment':'user')}>🔄 Flip</button></div>
      {flash&&face==='user'&&<div className="cam-hint">Screen flash: the screen lights up when you take the picture</div>}
+     {onLoc&&<div className="cam-loc"><button className="sm" onClick={onLoc}>📍 Send my location instead</button></div>}
      <div className="cam-bar"><button className="cam-shot" disabled={!ready||busy} onClick={snap} aria-label="Take picture"/></div></>}</>}
  </div>}

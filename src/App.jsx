@@ -14,6 +14,8 @@ import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
 import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
 import Cam from './Cam';
+import Gallery from './Gallery';
+import Buys from './Buys';
 
 // shown to the host right after a space is created: they must choose when the billing cycle starts
 function CycleSetup({sp,say}){const[day,setDay]=useState(14),[busy,setBusy]=useState(false);
@@ -73,7 +75,7 @@ export default function App(){
  // punch notes: the host can turn them off for the whole space; each person can also hide them on their own phone
  const notesOn=sp?.cfg?.notes!==false,showN=notesOn&&!hideN,setHideN=v=>{localStorage.setItem('hideNotes',v?'1':'0');setHideN_(v)};
  useEffect(()=>{if(!menu)setPnote('')},[menu]);
- const [kb,setKb]=useState(false);
+ const [kb,setKb]=useState(false),[locBusy,setLocBusy]=useState(false),[gal,setGal]=useState(false),[bz,setBz]=useState(false);
  useEffect(()=>{const isT=e=>e.target?.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select');let t;
   const on=e=>{if(isT(e)){clearTimeout(t);setKb(true)}},off_=e=>{if(isT(e)){clearTimeout(t);t=setTimeout(()=>setKb(false),120)}};
   addEventListener('focusin',on);addEventListener('focusout',off_);return()=>{removeEventListener('focusin',on);removeEventListener('focusout',off_);clearTimeout(t)}},[]);
@@ -91,8 +93,9 @@ export default function App(){
  const me={n:u.displayName||'Me',p:u.photoURL||''},owner=sp.ownerId===u.uid,cd=sp.cycleDay||14,r=cyc(off,cd);
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
  const last=id=>norm(id,PX).at(-1),mine=last(u.uid),on=mine?.type==='in',pend=(owner?new Set(X.filter(x=>x.status==='pending').map(x=>x.batch||x.id)).size:0)+new Set(X.filter(x=>x.status==='suggested'&&x.uid===u.uid).map(x=>x.batch||x.id)).size;
- const H=id=>hrs(id,PX,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
- const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.wifi?<span className="tag t-approved">{p.by?'by host':'📶 Wi-Fi'}</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
+ const stay=(id,a,b)=>({h:hrs(id,PX,X,[a,b]),d:daily(iv(id,PX,X,[a,b]),[a,b]).filter(x=>x>=1).length}),   // Shared buys: hours and days at home in a period
+  H=id=>hrs(id,PX,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
+ const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.wifi?<span className="tag t-approved">{p.by?'by host':'📶 Wi-Fi'}</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍 Map</a>:null;
 
  async function save(pr,type){type=type||(on?'out':'in');const pref=await addDoc(col('punches'),{uid:u.uid,type,ts:Date.now(),...pr,...(notesOn&&pnote.trim()?{note:pnote.trim().slice(0,140)}:{})});setMenu(null);buzz();ping({sid:sp.id,kind:'punch',id:pref.id});   // time in, time out AND "still away" confirmations notify the dorm
   if(type==='away')return say('Confirmed ✓ Next check is tomorrow 7:30–8:00 PM');setBurst(b=>b+1);
@@ -108,7 +111,12 @@ export default function App(){
  const remindAll=async list=>{setVb('all');try{await Promise.all(list.map(v=>hostact({sid:sp.id,action:'remind',target:v.uid,text:'Forgot to time out? Please time out if you are no longer in the dorm.'})));say(`Reminder sent to ${list.length} member${list.length>1?'s':''} ✓`,4500)}catch(e){say(e.message,5000)}finally{setVb(null)}};
  const saveNote=async clear=>{try{await updateDoc(doc(db,'spaces',sp.id,'punches',ne.id),{note:clear===true||!ne.text.trim()?deleteField():ne.text.trim().slice(0,140),noteAt:Date.now()});setMenu(null);setNe(null);say(clear===true?'Note removed':'Note saved ✓')}catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',6000)}};
  const photo=async(fl,t)=>fl&&save({photo:await shrink(fl,true)},t);   // phone-camera-app fallback: assume front camera, so mirror it too
- const loc=t=>navigator.geolocation.getCurrentPosition(p=>save({loc:{lat:p.coords.latitude,lng:p.coords.longitude}},t),()=>say('Location blocked. Use a picture instead.'),{enableHighAccuracy:true,timeout:15000});
+ // SEND MY LOCATION: tries GPS first, then a looser/faster fix, and says exactly what went wrong (blocked / no signal / timeout)
+ const loc=t=>{if(!navigator.geolocation)return say('This browser cannot share location. Use a picture instead.',5000);if(locBusy)return;setLocBusy(true);
+  const fin=()=>setLocBusy(false),
+   good=p=>{fin();save({loc:{lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),acc:Math.round(p.coords.accuracy||0)}},t)},
+   bad=e=>{fin();say(e?.code===1?'Location is blocked for DormMate. Allow location in your phone settings (or the site settings in your browser), or use a picture.':e?.code===3?'Could not get your location in time. Go near a window, make sure GPS is on, and try again.':'Your phone could not find your location. Turn on GPS and try again, or use a picture.',7000)};
+  navigator.geolocation.getCurrentPosition(good,e=>e?.code===1?bad(e):navigator.geolocation.getCurrentPosition(good,bad,{enableHighAccuracy:false,timeout:15000,maximumAge:120000}),{enableHighAccuracy:true,timeout:12000,maximumAge:0})};
  async function leave(s){const rest=s.members.filter(m=>m!==u.uid),ref=doc(db,'spaces',s.id);if(!rest.length)return wipe(s.id);
   const up={members:arrayRemove(u.uid),['names.'+u.uid]:deleteField()};if(s.ownerId===u.uid)up.ownerId=rest[0];return updateDoc(ref,up)}
  const switchAcc=async()=>{await signOut(auth);signInWithPopup(auth,gp).catch(e=>say(e.message))};
@@ -123,7 +131,8 @@ export default function App(){
   if(await Notification.requestPermission()!=='granted')return say('Reminders blocked. Allow notifications in your phone settings.',5000);
   try{await enablePush(u.uid);await notify('DormMate reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
- async function wipe(id){for(const c of ['punches','exceptions','bills','billDrafts','comments','presence','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
+ async function wipe(id){await updateDoc(doc(db,'spaces',id),{wipe:true});   // once set it cannot be undone; only now may pictures/locations be removed
+  for(const c of ['punches','exceptions','bills','billDrafts','buys','buyDrafts','comments','presence','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
  const dlR=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
@@ -151,6 +160,7 @@ export default function App(){
    <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}{l?.auto&&i?' · auto time-in (did not confirm)':''}{i&&pr?.pending?<span className="tag t-pending" style={{marginLeft:6}}>📴 left Wi-Fi {tm(pr.outAt)}</span>:i&&pr?.state==='in'?<span className="tag t-approved" style={{marginLeft:6}}>📶 on Wi-Fi</span>:null}</div>
    {al&&<div className="awayline">📍 Confirmed still away · {fmt(al.ts)}</div>}{showN&&l?.note&&<div className="pnote">💬 {l.note}</div>}{showN&&al?.note&&<div className="pnote">💬 {al.note}</div>}{showN&&l?.id&&!l.fix&&<button className="sm" style={{marginTop:6}} onClick={()=>openCmt(l)}>💬 {cnt(l.id)||'Comment'}</button>}</div>{al&&proof(al)}{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
+  <Item><div className="row sp"><div><h3 style={{margin:0}}>🖼 Gallery</h3><span className="mut">Every picture and location, kept for good</span></div><button className="sm pri" onClick={()=>setGal(true)}>Open</button></div></Item>
   {owner&&<Item><p className="mut">⚙️ Cycle day, invite code, members and the host tools (send a message to everyone) are now in the <b style={{color:'var(--ink)'}}>Settings</b> tab.</p></Item>}
   <Item><div className="mut" style={{marginBottom:6}}>Notices and comments only show in the billing cycle they were posted in.</div><Cycle off={off} set={setOff} d={cd}/></Item>
   {AV.length>0&&<Item><h3>Announcements</h3>{AV.map(a=><div key={a.id} className="nrow">{bsel&&<input type="checkbox" checked={bsel.includes('announcements/'+a.id)} onChange={()=>togSel('announcements/'+a.id)}/>}<div className="nbody"><span className="mut">{fmt(a.createdAt)}</span><p>📣 {a.text}</p></div>{owner&&!bsel&&<button className="sm" aria-label="Delete" onClick={()=>delItem('announcements',a.id)}>✕</button>}</div>)}</Item>}
@@ -163,6 +173,7 @@ export default function App(){
 
  const History=()=>{const w0=hf==='all'?members:members.filter(m=>m.id===hf),who=w0.length?w0:members,dds=who.map(m=>daily(iv(m.id,PX,X,r),r)),avg=hf==='all',dd=dds[0].map((_,i)=>dds.reduce((t,d)=>t+d[i],0)/(avg?dds.length:1)),mx=Math.max(1,...dd),S=who.flatMap(m=>sessions(m.id,PX,X,r)).sort((x,y)=>y.a-x.a);
   return <List><Cycle off={off} set={setOff} d={cd}/>
+  <button className="w" style={{marginBottom:12}} onClick={()=>setGal(true)}>🖼 Open gallery (all pictures & locations)</button>
   <div className="fchips" data-tour="hist">{[{id:'all',n:'Everyone'},...members].map(m=><button key={m.id} className={`fchip ${hf===m.id?'on':''}`} onClick={()=>setHf(m.id)}>{m.n.split(' ')[0]}</button>)}</div>
   <Item data-tour="chart"><div className="row sp"><h3 style={{margin:0}}>{avg?'Average hours per day':'Hours per day'}</h3><span className="mut">{sel!=null&&dd[sel]!=null?`${dayAt(r[0],sel).toLocaleDateString([],{month:'short',day:'numeric'})}: ${dur(dd[sel])}`:'tap a bar'}</span></div>
    <div className="chart">{dd.map((v,i)=><div key={i} className="col" onClick={()=>setSel(i)}><motion.div className={`b ${sel===i?'sel':''}`} initial={{height:0}} animate={{height:Math.max(3,v/mx*100)+'%'}} transition={{delay:i*.015}}/><span>{i%5===0?dayAt(r[0],i).getDate():''}</span></div>)}</div>
@@ -248,7 +259,7 @@ export default function App(){
 
  const V={home:Home,dorm:Dorm,history:History,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills'],['settings','⚙️','Settings']],
   fxp={u,sp,owner,members,nm,P:PX,X,B,r,off,setOff,cd,say,col,ping,zoom:setZoom,showN,presets:PF?.fixPresets||[],savePresets:arr=>setDoc(doc(db,'prefs',u.uid),{uid:u.uid,fixPresets:arr},{merge:true})},
-  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,showUpdates:()=>setUpd({list:UPDATES,review:true}),replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces')};
+  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,showUpdates:()=>setUpd({list:UPDATES,review:true}),replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces'),openBuys:()=>setBz(true)};
  return <><main>{orbs}
   <header><button className="hbtn" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
   <AnimatePresence mode="wait"><motion.div key={tab} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-24}} transition={{duration:.18}}>{tab==='fixes'?<Fixes {...fxp}/>:tab==='settings'?<Settings {...stp}/>:V[tab]()}</motion.div></AnimatePresence>
@@ -256,7 +267,7 @@ export default function App(){
   <AnimatePresence>{menu&&<Sheet key={menu} close={()=>setMenu(null)}>
    {(menu==='punch'||menu==='away')&&<><h2>{menu==='away'?"Confirm you're still away":`Time ${on?'out':'in'}`}</h2><p className="mut" style={{margin:'6px 0 12px'}}>Add proof so your dormmates know it's real.</p>{notesOn&&<><label>Note (optional)</label><input maxLength={140} value={pnote} onChange={e=>setPnote(e.target.value)} placeholder={menu==='away'?'e.g. Staying with a friend tonight':on?'e.g. Going to class, back by 6':'e.g. Back from work'}/></>}
     <input id="cam" type="file" accept="image/*" capture="user" hidden onChange={e=>photo(e.target.files[0],menu==='away'?'away':undefined)}/>
-    <button className="pri w" style={{marginBottom:8}} onClick={()=>setCam(menu==='away'?'away':'punch')}>📸 Take a picture</button><button className="w" onClick={()=>loc(menu==='away'?'away':undefined)}>📍 Send my location</button></>}
+    <button className="pri w" style={{marginBottom:8}} onClick={()=>setCam(menu==='away'?'away':'punch')}>📸 Take a picture</button><button className="w" disabled={locBusy} onClick={()=>loc(menu==='away'?'away':undefined)}>{locBusy?'📍 Getting your location…':'📍 Send my location'}</button></>}
    {menu==='note'&&ne&&<><h2>Note for {ne.type==='in'?'time in':'time out'}</h2><p className="mut" style={{margin:'6px 0 12px'}}>{fmt(ne.ts)}</p><input autoFocus maxLength={140} value={ne.text} onChange={e=>setNe({...ne,text:e.target.value})} placeholder="Add a short note"/><button className="pri w" style={{marginBottom:8}} onClick={saveNote}>Save note</button>{ne.had&&<button className="w" onClick={()=>saveNote(true)}>Remove note</button>}</>}
    {menu==='vf'&&vfT&&(()=>{const v=PRS[vfT];if(!v?.pending)return <><h2>All good ✓</h2><p className="mut" style={{margin:'6px 0 14px'}}>{nm(vfT)} is no longer waiting for a check.</p><button className="w" onClick={()=>setMenu(null)}>Close</button></>;
     const f=nm(vfT).split(' ')[0];return <><h2>📴 {nm(vfT)}</h2><p className="mut" style={{margin:'4px 0 14px'}}>Left the dorm Wi-Fi at <b style={{color:'var(--ink)'}}>{tm(v.outAt)}</b> ({Math.round((Date.now()-v.outAt)/6e4)} min ago) and is still timed in. They were reminded, but not timed out.</p>
@@ -275,9 +286,11 @@ export default function App(){
     <SpaceForm u={u} open={open} say={say}/></>}
   </Sheet>}</AnimatePresence>
   <AnimatePresence>{rv&&<ReceiptView key="rv" list={rv.list} i={rv.i} setI={i=>setRv({...rv,i})} paid={x=>!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]} onClose={()=>setRv(null)} onDownload={dlR}/>}</AnimatePresence>
+  {gal&&<Gallery sp={sp} members={members} nm={nm} zoom={setZoom} onClose={()=>setGal(false)}/>}
+  {bz&&<Buys u={u} sp={sp} owner={owner} members={members} nm={nm} say={say} stay={stay} r={r} onClose={()=>setBz(false)}/>}
   {tourEl}
   {updEl}
-  {cam&&<Cam onShot={d=>{const t=cam==='away'?'away':undefined;setCam(null);save({photo:d},t)}} onClose={()=>setCam(null)} onFallback={()=>{setCam(null);document.getElementById('cam')?.click()}}/>}
+  {cam&&<Cam onShot={d=>{const t=cam==='away'?'away':undefined;setCam(null);save({photo:d},t)}} onClose={()=>setCam(null)} onFallback={()=>{setCam(null);document.getElementById('cam')?.click()}} onLoc={()=>{const t=cam==='away'?'away':undefined;setCam(null);loc(t)}}/>}
   {owner&&sp.cycleSet===false&&!tour&&<CycleSetup sp={sp} say={say}/>}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>

@@ -7,6 +7,17 @@ import {motion} from 'framer-motion';
 // An item marked  host:true  is only shown to the host.
 // ---------------------------------------------------------------------------------------------
 export const UPDATES=[
+ {v:5,date:'Nov 1, 2026',title:'Gallery, Shared buys and a steadier auto time-in',sections:[
+  {h:'Auto time-in',items:[
+   ['⏰','The 8:00 PM auto time-in now always follows Manila time, on every phone and on the server. Before, the server could disagree with your phone between 8 PM and 4 AM, so Wi-Fi time in / out sometimes did nothing.'],
+   ['🔔','The 7:30 PM “confirm you are away” alert and the “auto timed in” notice to the dorm are sent more reliably, even when the timer runs late.']]},
+  {h:'Pictures & location',items:[
+   ['🖼','New Gallery (Dorm and History tabs) with every picture and location ever sent. They are kept for good: fixes and removals only change hours, never these records.'],
+   ['📍','“Send my location” is also inside the camera, tells you what to do when location is blocked, and falls back to a quicker fix when GPS is slow.']]},
+  {h:'Shared buys (beta)',items:[
+   ['🛒','Settings → Shared buys. The host asks someone to buy rice, water or anything else, sets the amount and splits the cost by stay, days at home, equally, by turn or with custom amounts.'],
+   ['📨','It stays private to the host until they tap Send. Then every member is notified with the result and their own share.'],
+   ['⚖️','A fairness board shows who bought and paid the most, and suggests who should buy or pay next.']]}]},
  {v:4,date:'Oct 22, 2026',title:'Presets and Wi-Fi checks',sections:[
   {h:'Fixes',items:[['💾','Saving a time in / out preset works again, and every preset now has a Delete button under “Your presets”.']]},
   {h:'Dorm Wi-Fi',items:[['🔎','Settings → Dorm Wi-Fi now shows the last signal from your phone and has a “Check my connection” button that tells you what the server sees and why nothing changed.']]}]},
