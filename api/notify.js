@@ -137,6 +137,37 @@ export default async function handler(req,res){
       let n=1;if(d.batch){const q=await sref.collection('exceptions').where('batch','==',d.batch).get();n=q.docs.filter(z=>z.data().status===d.status&&Math.abs((z.data().decidedAt||0)-d.decidedAt)<6e4).length||1}
       msg={title:d.status==='approved'?'✅ Fix approved':'❌ Fix denied',body:cut(`${KIND[d.kind||'add']}${n>1?` · ${n} days`:''} · “${d.reason||'no reason'}”`),tag:'fix-'+id};
     }
+    else if(kind==='buy'){
+      // SHARED BUYS (beta): the host sent a request. Every member gets the RESULT with THEIR OWN share (the amounts were frozen when it was sent).
+      const{r,d}=await get('buys');
+      if(!owner||!d||!d.sentAt||!fresh(d.sentAt)||d.pushed===d.sentAt)return skip();
+      await r.update({pushed:d.sentAt});
+      const buyer=(sp.names?.[d.buyer]?.n||'Someone').split(' ')[0],ttl=cut(d.title,40),em=d.emoji||'🛒',by=d.needBy?` Needed by ${dd(d.needBy)}.`:'';
+      let sent=0,dev=0;
+      for(const m of others(sp,uid)){
+        const mine=+d.shares?.[m]||0;
+        const body=m===d.buyer?`You are the one buying it. Total ${money(d.total)}${mine>0?` (your own share is ${money(mine)})`:''}. The others will pay you back.${by}`
+          :mine>0?`${buyer} will buy it. Your share is ${money(mine)}. Pay ${buyer} back.${by}`
+          :`${buyer} will buy it. You are not part of this one.`;
+        dev+=await push([m],{title:`${em} ${d.edited?'Updated: ':''}${ttl}`,body:cut(body,200),tag:'buy-'+id});sent++}
+      return res.json({ok:true,sent,devices:dev});
+    }
+    else if(kind==='buyremind'){
+      const{r,d}=await get('buys');
+      if(!owner||!d||!d.sentAt||(d.nudgeAt&&Date.now()-d.nudgeAt<36e5))return skip();
+      const pay=Object.keys(d.shares||{}).filter(m=>m!==uid&&m!==d.buyer&&+d.shares[m]>0&&!d.paid?.[m]&&(sp.members||[]).includes(m));
+      if(!pay.length)return skip();
+      await r.update({nudgeAt:Date.now()});
+      const buyer=(sp.names?.[d.buyer]?.n||'the buyer').split(' ')[0];let dev=0;
+      for(const m of pay)dev+=await push([m],{title:`${d.emoji||'🛒'} Reminder: ${cut(d.title,40)}`,body:`Please pay ${buyer} your share of ${money(d.shares[m])}.`,tag:'buynudge-'+id});
+      return res.json({ok:true,sent:pay.length,devices:dev});
+    }
+    else if(kind==='buypaid'){
+      const{d}=await get('buys');
+      if(!owner||!d?.paid?.[target]||target===uid||!(sp.members||[]).includes(target))return skip();
+      to=[target];
+      msg={title:'✅ Payment received',body:cut(`${d.emoji||'🛒'} ${d.title}: the host marked your share as paid.`),tag:'buypaid-'+id};
+    }
     else return res.status(400).json({error:'unknown kind'});
 
     const devices=msg?await push(to,msg):0;

@@ -1,6 +1,6 @@
 process.env.TZ='Asia/Manila';
 import {db,push,pushInfo,who,others} from './_lib.js';
-import {norm} from '../src/lib.js';
+import {norm,away} from '../src/lib.js';
 
 // Called every 2-5 minutes by cron-job.org. It handles:
 //  1) each member's custom "time in" / "time out" reminder times
@@ -53,12 +53,23 @@ export default async function handler(req,res){
       }
     }
 
-    // 1b) 8:00-9:00 PM: tell the dorm about anyone who did not confirm they were away and was auto timed in (once per 10-minute slot)
-    if(mins>=1200&&mins<1260){const st=await slots(),slot=Math.floor(Date.now()/6e5);
+    // 1a) 7:30-8:00 PM: "confirm you are away" push. Same message as api/remind.js (same title = same notification, so they never stack),
+    //     so it works with just this one timer. Sent once in 7:30-7:44 and once in 7:50-7:59.
+    {const wk=mins>=1170&&mins<1185?'awayA':mins>=1190&&mins<1200?'awayB':null;
+     if(wk&&(await slots())[wk]!==today){await setSlots({[wk]:today});
+      const dueAway=new Map(),t0=Date.now()+60e3;
+      for(const s of (await getSpaces()).docs){const P=await punches(s,150);
+       for(const uid of s.data().members||[]){const a=away(uid,P,t0);if(a?.open)dueAway.set(uid,Math.min(dueAway.get(uid)??99,Math.max(1,Math.round((a.D-t0)/6e4))))}}
+      for(const[uid,m]of dueAway)await push([uid],{title:'⏰ Confirm you are away',body:`Confirm you're still away. ${m} min left before you're timed in at 8:00 PM.`});
+      out.away=dueAway.size}}
+
+    // 1b) 8:00-10:00 PM: tell the dorm about anyone who did not confirm they were away and was auto timed in.
+    //     A wide window (and a 2-hour look-back) so a late or skipped timer run never loses the message; each person is announced only once.
+    if(mins>=1200&&mins<1320){const st=await slots(),slot=Math.floor(Date.now()/9e5);
       if(st.autoSlot!==slot){await setSlots({autoSlot:slot});
         for(const s of (await getSpaces()).docs){const sp=s.data(),mem=sp.members||[];if(mem.length<2)continue;
           const P=await punches(s,150);
-          for(const uid of mem){for(const e of norm(uid,P,Date.now()).filter(e=>e.auto&&Date.now()-e.ts<90*60e3)){
+          for(const uid of mem){for(const e of norm(uid,P,Date.now()).filter(e=>e.auto&&Date.now()-e.ts<2*36e5)){
             const ref=s.ref.collection('autoNotified').doc(`${uid}_${e.ts}`);if((await ref.get()).exists)continue;
             await ref.set({at:Date.now()});   // claim first so it is never sent twice
             await push(others(sp,uid),{title:`🏠 ${who(sp,uid)} was auto timed in`,body:`They did not confirm they were away before 8:00 PM, so they are counted as home.`,tag:'auto-'+uid+'-'+e.ts});out.auto=(out.auto||0)+1}}}}}
