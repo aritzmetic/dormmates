@@ -12,7 +12,7 @@ import Tour,{TOUR_V} from './Tour';
 import Updates,{UPDATES,LATEST} from './Updates';
 import {getTheme,setTheme} from './theme';
 import {buzz,Num,Av,Cycle,List,Item,Sheet} from './ui';
-import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet} from './lib';
+import {fmt,tm,dur,clock,peso,d2s,s2d,dayAt,cyc,iv,hrs,daily,sessions,shares,norm,away,fd,dayWord,notify,shrink,withFix,xr,daysLeft,cycLabel,defDue,sameSet,withOff} from './lib';
 import Cam from './Cam';
 import Gallery from './Gallery';
 import Buys from './Buys';
@@ -36,10 +36,10 @@ function SpaceForm({u,open,say}){const [n,setN]=useState(''),[c,setC]=useState('
 
 export default function App(){
  const [u,setU]=useState(null),[ready,setReady]=useState(false),[loaded,setLoaded]=useState(false),[spaces,setSpaces]=useState([]),[sid,setSid]=useState(localStorage.getItem('sid'));
- const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]);
+ const [P,setP]=useState([]),[X,setX]=useState([]),[B,setB]=useState([]),[AO,setAO]=useState([]);
  const [tab,setTab]=useState('home'),[off,setOff]=useState(0),[menu,setMenu]=useState(null),[zoom,setZoom]=useState(null),[sel,setSel]=useState(null),[toast,setToast]=useState(''),[burst,setBurst]=useState(0),[,tick]=useState(0),[hf,setHf]=useState('all'),[nt,setNt]=useState(''),[N,setN]=useState([]),[A,setA]=useState([]),[R,setR]=useState([]),[PF,setPF]=useState(null),[rv,setRv]=useState(null),[PFL,setPFL]=useState(false),[cam,setCam]=useState(null),[upd,setUpd]=useState(null),[PRS,setPRS]=useState({}),[CM,setCM]=useState([]),[cm,setCm]=useState(null),[ctext,setCtext]=useState(''),[vn,setVn]=useState({}),[vb,setVb]=useState(null),[vfT,setVfT]=useState(null),[bsel,setBsel]=useState(null),[selCm,setSelCm]=useState(false),[pnote,setPnote]=useState(''),[ne,setNe]=useState(null),[hideN,setHideN_]=useState(localStorage.getItem('hideNotes')==='1'),[tour,setTour]=useState(false),[BD,setBD]=useState([]),[thm,setThm_]=useState(getTheme());
  const setThm=m=>{setTheme(m);setThm_(m)};
- const PX=withFix(P,X); // punches + approved time-in-only / time-out-only fixes
+ const PX=withOff(withFix(P,X),AO); // punches + approved time-in-only / time-out-only fixes + approved "no 8 PM auto time-in" days (as virtual away confirmations)
  const say=(m,ms=2200)=>{setToast(m);setTimeout(()=>setToast(''),ms)};
  useEffect(()=>{const t=setInterval(()=>tick(n=>n+1),1000);return()=>clearInterval(t)},[]);
  useEffect(()=>onAuthStateChanged(auth,user=>{setU(user);setReady(true)}),[]);
@@ -48,8 +48,9 @@ export default function App(){
  useEffect(()=>{setLoaded(false);if(!u){setSpaces([]);return}
   return onSnapshot(query(collection(db,'spaces'),where('members','array-contains',u.uid)),d=>{setSpaces(d.docs.map(x=>({id:x.id,...x.data()})));setLoaded(true)})},[u?.uid]);
  const sp=spaces.find(s=>s.id===sid)||spaces[0];
- useEffect(()=>{setP([]);setX([]);setB([]);setN([]);setA([]);setR([]);setBD([]);setPRS({});setCM([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
+ useEffect(()=>{setP([]);setX([]);setB([]);setAO([]);setN([]);setA([]);setR([]);setBD([]);setPRS({});setCM([]);if(!sp?.id)return;localStorage.setItem('sid',sp.id);const s=doc(db,'spaces',sp.id),m=d=>d.docs.map(x=>({id:x.id,...x.data()}));
   const un=[onSnapshot(query(collection(s,'punches'),orderBy('ts','desc'),limit(1500)),d=>setP(m(d))),onSnapshot(query(collection(s,'exceptions'),orderBy('createdAt','desc')),d=>setX(m(d))),onSnapshot(collection(s,'bills'),d=>setB(m(d))),onSnapshot(query(collection(s,'notes'),orderBy('createdAt','desc'),limit(300)),d=>setN(m(d))),onSnapshot(query(collection(s,'announcements'),orderBy('createdAt','desc'),limit(10)),d=>setA(m(d))),onSnapshot(sp.ownerId===u.uid?collection(s,'receipts'):query(collection(s,'receipts'),where('uid','==',u.uid)),d=>setR(m(d)),()=>{}),
+   onSnapshot(collection(s,'autoOff'),d=>setAO(m(d)),()=>{}),
    onSnapshot(collection(s,'presence'),d=>setPRS(Object.fromEntries(d.docs.map(x=>[x.id,x.data()]))),()=>{}),
    onSnapshot(query(collection(s,'comments'),orderBy('ts','desc'),limit(400)),d=>setCM(m(d)),()=>{}),
    sp.ownerId===u.uid?onSnapshot(collection(s,'billDrafts'),d=>setBD(m(d)),()=>{}):()=>{}];
@@ -94,6 +95,7 @@ export default function App(){
  const members=sp.members.map(id=>({id,...(sp.names?.[id]||{n:'Member'})})),nm=id=>members.find(m=>m.id===id)?.n;
  const last=id=>norm(id,PX).at(-1),mine=last(u.uid),on=mine?.type==='in',pend=(owner?new Set(X.filter(x=>x.status==='pending').map(x=>x.batch||x.id)).size:0)+new Set(X.filter(x=>x.status==='suggested'&&x.uid===u.uid).map(x=>x.batch||x.id)).size;
  const stay=(id,a,b)=>({h:hrs(id,PX,X,[a,b]),d:daily(iv(id,PX,X,[a,b]),[a,b]).filter(x=>x>=1).length}),   // Shared buys: hours and days at home in a period
+  pendOff=owner?AO.filter(x=>x.status==='pending').length:0,
   H=id=>hrs(id,PX,X,r),col=n=>collection(db,'spaces',sp.id,n),th=s=><img className="thumb" src={s} onClick={()=>setZoom(s)}/>;
  const proof=p=>p?.fix?<span className="tag t-approved">fix</span>:p?.wifi?<span className="tag t-approved">{p.by?'by host':'📶 Wi-Fi'}</span>:p?.auto?<span className="tag t-pending">auto</span>:p?.photo?th(p.photo):p?.loc?<a className="btn sm" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍 Map</a>:null;
 
@@ -132,7 +134,7 @@ export default function App(){
   try{await enablePush(u.uid);await notify('DormMate reminders are on 🔔','You will get a reminder at 7:30 PM, even when the app is closed.');say('Reminders on ✓',4000)}
   catch(e){say('Could not turn on push: '+e.message,6000)}};
  async function wipe(id){await updateDoc(doc(db,'spaces',id),{wipe:true});   // once set it cannot be undone; only now may pictures/locations be removed
-  for(const c of ['punches','exceptions','bills','billDrafts','buys','buyDrafts','comments','presence','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
+  for(const c of ['punches','exceptions','bills','billDrafts','buys','buyDrafts','buyAlerts','autoOff','comments','presence','notes','announcements','receipts']){const q=await getDocs(collection(db,'spaces',id,c));for(let i=0;i<q.docs.length;i+=40)await Promise.all(q.docs.slice(i,i+40).map(d=>deleteDoc(d.ref)))}await deleteDoc(doc(db,'spaces',id))}
  const post=async()=>{if(!nt.trim())return;const nr=await addDoc(col('notes'),{uid:u.uid,text:nt.trim(),createdAt:Date.now()});setNt('');ping({sid:sp.id,kind:'note',id:nr.id})};
  const delItem=async(c,id)=>{if(!confirm('Delete this permanently for everyone?'))return;try{await deleteDoc(doc(db,'spaces',sp.id,c,id));buzz();say('Deleted')}catch(e){say('Delete failed: '+e.message,5000)}};
  const dlR=async list=>{try{const{downloadReceipts}=await import('./receipt');await downloadReceipts(list.map(x=>({...x,paid:!!B.find(z=>z.id===x.cyc)?.paid?.[x.uid]})))}catch(e){say('Could not make the PDF: '+e.message,5000)}};
@@ -155,10 +157,10 @@ export default function App(){
    <p className="mut" style={{marginBottom:10}}>Tap a name to choose what to do: time them out, send a reminder, or confirm they are still home.</p>
    {VF.map(v=>{const mb=members.find(x=>x.id===v.uid);return <button key={v.uid} className="vf-row" onClick={()=>{setVfT(v.uid);setMenu('vf')}}>{mb&&<Av m={mb}/>}<span style={{flex:1}}><b>{nm(v.uid)}</b><span className="mut" style={{display:'block'}}>Left at {tm(v.outAt)} · {Math.round((Date.now()-v.outAt)/6e4)} min ago</span></span><span>›</span></button>})}
    <button className="pri w" disabled={!!vb} onClick={()=>remindAll(VF)}>🔔 Remind {VF.length>1?`all ${VF.length}`:'them'} to time out</button></Item>}
-  {members.map(m=>{const l=last(m.id),pr=PRS[m.id],i=l?.type==='in',al=!i&&l?PX.filter(p=>p.uid===m.id&&p.type==='away'&&p.ts>l.ts).sort((a,b)=>b.ts-a.ts)[0]:null;
+  {members.map(m=>{const l=last(m.id),pr=PRS[m.id],i=l?.type==='in',al=!i&&l?PX.filter(p=>p.uid===m.id&&p.type==='away'&&p.ts>l.ts&&(!p.off||p.ts<Date.now()+864e5)).sort((a,b)=>b.ts-a.ts)[0]:null;
   return <Item key={m.id} className="card row" data-tour={m.id===members[0].id?'dorm':undefined}><Av m={m}/><div style={{flex:1}}><b>{m.n}</b>{m.id===sp.ownerId&&<span className="mut"> · host</span>}
    <div className="mut"><span className={`dot ${i?'on':''}`}/>{l?`${i?'In for '+dur((Date.now()-l.ts)/36e5):'Out'} · ${fmt(l.ts)}`:'No punches yet'}{l?.auto&&i?' · auto time-in (did not confirm)':''}{i&&pr?.pending?<span className="tag t-pending" style={{marginLeft:6}}>📴 left Wi-Fi {tm(pr.outAt)}</span>:i&&pr?.state==='in'?<span className="tag t-approved" style={{marginLeft:6}}>📶 on Wi-Fi</span>:null}</div>
-   {al&&<div className="awayline">📍 Confirmed still away · {fmt(al.ts)}</div>}{showN&&l?.note&&<div className="pnote">💬 {l.note}</div>}{showN&&al?.note&&<div className="pnote">💬 {al.note}</div>}{showN&&l?.id&&!l.fix&&<button className="sm" style={{marginTop:6}} onClick={()=>openCmt(l)}>💬 {cnt(l.id)||'Comment'}</button>}</div>{al&&proof(al)}{proof(l)}
+   {al&&<div className="awayline">📍 {al.off?'Auto time-in is off tonight (approved by the host)':'Confirmed still away · '+fmt(al.ts)}</div>}{showN&&l?.note&&<div className="pnote">💬 {l.note}</div>}{showN&&al?.note&&<div className="pnote">💬 {al.note}</div>}{showN&&l?.id&&!l.fix&&<button className="sm" style={{marginTop:6}} onClick={()=>openCmt(l)}>💬 {cnt(l.id)||'Comment'}</button>}</div>{al&&proof(al)}{proof(l)}
    {owner&&m.id!==u.uid&&<button className="sm" onClick={()=>confirm(`Remove ${m.n} from this space?`)&&updateDoc(doc(db,'spaces',sp.id),{members:arrayRemove(m.id),['names.'+m.id]:deleteField()})}>✕</button>}</Item>})}
   <Item><div className="row sp"><div><h3 style={{margin:0}}>🖼 Gallery</h3><span className="mut">Every picture and location, kept for good</span></div><button className="sm pri" onClick={()=>setGal(true)}>Open</button></div></Item>
   {owner&&<Item><p className="mut">⚙️ Cycle day, invite code, members and the host tools (send a message to everyone) are now in the <b style={{color:'var(--ink)'}}>Settings</b> tab.</p></Item>}
@@ -259,7 +261,7 @@ export default function App(){
 
  const V={home:Home,dorm:Dorm,history:History,bills:Bills},T=[['home','🏠','Home'],['dorm','👥','Dorm'],['history','🕘','History'],['fixes','📝','Fixes'],['bills','💡','Bills'],['settings','⚙️','Settings']],
   fxp={u,sp,owner,members,nm,P:PX,X,B,r,off,setOff,cd,say,col,ping,zoom:setZoom,showN,presets:PF?.fixPresets||[],savePresets:arr=>setDoc(doc(db,'prefs',u.uid),{uid:u.uid,fixPresets:arr},{merge:true})},
-  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,showUpdates:()=>setUpd({list:UPDATES,review:true}),replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces'),openBuys:()=>setBz(true)};
+  stp={u,sp,spaces,owner,members,nm,PF,P:PX,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,thm,setThm,hideN,setHideN,showUpdates:()=>setUpd({list:UPDATES,review:true}),replayTour:()=>{setTour(true)},openSpaces:()=>setMenu('spaces'),openBuys:()=>setBz(true),AO};
  return <><main>{orbs}
   <header><button className="hbtn" onClick={()=>setMenu('spaces')}><div className="logo"><i/>{sp.name} ▾</div><span className="mut">{spaces.length>1?`${spaces.length} spaces · `:''}tap to switch</span></button><button className="hbtn" onClick={()=>{setTab('settings');setOff(0)}}><Av m={me}/></button></header>
   <AnimatePresence mode="wait"><motion.div key={tab} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-24}} transition={{duration:.18}}>{tab==='fixes'?<Fixes {...fxp}/>:tab==='settings'?<Settings {...stp}/>:V[tab]()}</motion.div></AnimatePresence>
@@ -294,4 +296,4 @@ export default function App(){
   {owner&&sp.cycleSet===false&&!tour&&<CycleSetup sp={sp} say={say}/>}
   <AnimatePresence>{zoom&&<motion.div className="lb" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setZoom(null)}><motion.img src={zoom} initial={{scale:.7}} animate={{scale:1}} exit={{scale:.7}}/></motion.div>}</AnimatePresence>
   <AnimatePresence>{toast&&<motion.div className="toast" initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}} exit={{y:-40,opacity:0}}>{toast}</motion.div>}</AnimatePresence></main>
-  <motion.nav layoutRoot data-tour="nav" className={kb?'kb':''}>{T.map(([k,i,n])=><button key={k} className={tab===k?'on':''} onClick={()=>{window.scrollTo(0,0);setTab(k);setOff(0);buzz()}}>{tab===k&&<motion.div layoutId="pill" className="pill" transition={{type:'spring',stiffness:420,damping:34}}/>}<span>{i}</span>{n}{k==='fixes'&&pend>0&&<em>{pend}</em>}</button>)}</motion.nav></>}
+  <motion.nav layoutRoot data-tour="nav" className={kb?'kb':''}>{T.map(([k,i,n])=><button key={k} className={tab===k?'on':''} onClick={()=>{window.scrollTo(0,0);setTab(k);setOff(0);buzz()}}>{tab===k&&<motion.div layoutId="pill" className="pill" transition={{type:'spring',stiffness:420,damping:34}}/>}<span>{i}</span>{n}{k==='fixes'&&pend>0&&<em>{pend}</em>}{k==='settings'&&pendOff>0&&<em>{pendOff}</em>}</button>)}</motion.nav></>}

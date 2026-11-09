@@ -25,6 +25,21 @@ const MN=8*36e5,m0=t=>Math.floor((t+MN)/864e5)*864e5-MN;   // 12:00 AM Manila of
 export const dl=t=>m0(t)+864e5+20*36e5;
 // first auto time-in after a time out: today 8 PM if timed out before 7:30 PM, otherwise tomorrow 8 PM
 export const fd=t=>{const e=m0(t)+20*36e5;return t<e-18e5?e:dl(t)};
+// ---- "no auto time-in" days (requested by a member, approved by the host) ----
+// Manila midnight of a YYYY-MM-DD date (what <input type="date"> gives)
+export const manilaMid=v=>Date.parse(v+'T00:00:00+08:00');
+// An approved day does not touch the auto time-in rule itself. It adds a virtual "confirmed away" one minute before 8:00 PM Manila of that day,
+// which is exactly what already stops the 8 PM auto time-in, so the app, the server and the reminders all agree.
+// Only days that are still ahead when the host decides count (an approval never rewrites hours that already happened), and a revoked request
+// stops counting from the moment it was revoked. x = {uid, a, b, status, decidedAt, revokedAt}, a/b = Manila midnight of the first / last day.
+export function offPunches(O){const o=[];
+ (O||[]).forEach(x=>{if(x.status!=='approved'&&x.status!=='revoked')return;
+  for(let t=+x.a,n=0;t<=+x.b&&n<62;t+=864e5,n++){const d8=t+20*36e5;
+   if(d8<=(+x.decidedAt||0))continue;                                  // that 8 PM had already passed when it was approved
+   if(x.status==='revoked'&&d8>(+x.revokedAt||0))continue;             // revoked: later days go back to normal
+   o.push({id:'ao'+x.id+'_'+t,uid:x.uid,type:'away',ts:d8-6e4,off:true})}});
+ return o}
+export const withOff=(P,O)=>O&&O.length?[...P,...offPunches(O)]:P;
 export const dayWord=t=>{const d=new Date(t),n=new Date(),k=x=>x.toDateString();return k(d)===k(n)?'today':k(d)===k(new Date(+n+864e5))?'tomorrow':d.toLocaleDateString([],{weekday:'long'})};
 export async function notify(title,body){try{if(window.Notification?.permission!=='granted')return false;const r=await navigator.serviceWorker?.ready;
  if(r?.showNotification){await r.showNotification(title,{body,icon:'/icon-192.png',vibrate:[120,60,120],tag:title});return true}new Notification(title,{body,icon:'/icon.svg'});return true}catch{return false}}

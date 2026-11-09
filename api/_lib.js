@@ -34,3 +34,9 @@ export async function push(uids,{title,body,tag,url}){
   }
   return okN;
 }
+
+// approved (or later revoked) "no 8 PM auto time-in" days of a space. src/lib.js turns them into virtual away confirmations (withOff).
+export async function offDocs(sref){
+  const q=await sref.collection('autoOff').where('status','in',['approved','revoked']).get();
+  return q.docs.map(d=>({id:d.id,...d.data()}));
+}

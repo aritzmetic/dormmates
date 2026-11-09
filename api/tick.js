@@ -1,6 +1,6 @@
 process.env.TZ='Asia/Manila';
-import {db,push,pushInfo,who,others} from './_lib.js';
-import {norm,away} from '../src/lib.js';
+import {db,push,pushInfo,who,others,offDocs} from './_lib.js';
+import {norm,away,withOff} from '../src/lib.js';
 
 // Called every 2-5 minutes by cron-job.org. It handles:
 //  1) each member's custom "time in" / "time out" reminder times
@@ -21,7 +21,7 @@ export default async function handler(req,res){
     // Spaces and punches are read only when something actually needs them, and heavy checks run at most once per time slot.
     let spacesP=null;const getSpaces=()=>spacesP||(spacesP=db.collection('spaces').get());
     const cache=new Map();
-    const punches=async(s,n=100)=>{const k=s.id+':'+n;if(!cache.has(k)){const q=await s.ref.collection('punches').orderBy('ts','desc').limit(n).get();cache.set(k,q.docs.map(d=>d.data()))}return cache.get(k)};
+    const punches=async(s,n=100)=>{const k=s.id+':'+n;if(!cache.has(k)){const q=await s.ref.collection('punches').orderBy('ts','desc').limit(n).get();cache.set(k,withOff(q.docs.map(d=>d.data()),await offDocs(s.ref)))}return cache.get(k)};
     let stP=null;const slots=async()=>stP||(stP=(await db.doc('meta/tickState').get()).data()||{});
     const setSlots=o=>db.doc('meta/tickState').set(o,{merge:true});
 

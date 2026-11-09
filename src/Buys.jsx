@@ -1,16 +1,18 @@
 import {useEffect,useMemo,useState} from 'react';
-import {doc,collection,setDoc,updateDoc,deleteDoc,onSnapshot} from 'firebase/firestore';
+import {doc,collection,setDoc,addDoc,updateDoc,deleteDoc,writeBatch,onSnapshot} from 'firebase/firestore';
 import {db} from './firebase';
 import {ping,pingWait} from './notify';
 import {Av,buzz} from './ui';
-import {peso,d2s,s2d,dur} from './lib';
-import {METHODS,METHOD_NAME,splitBuy,fairness,nextBuyer,nextPayer} from './buyLogic';
+import {peso,d2s,s2d,dur,shrink} from './lib';
+import {METHODS,METHOD_NAME,splitBuy,fairness,nextBuyer,nextPayer,itemStats} from './buyLogic';
 
 // SHARED BUYS (beta) - its own full-screen window, opened from Settings.
 //  The host asks someone to buy rice, water or anything else, sets the amount and chooses how the cost is split.
 //  Step 1: the host prepares it as a DRAFT (collection `buyDrafts`, host only, nobody else can read it).
 //  Step 2: the host taps "Send to everyone": it is copied to `buys`, and every member is notified with the result and THEIR share.
 //  Members only ever see requests that were sent.
+//  More: members can report "running low" (buyAlerts) · the buyer marks it bought with the real price and a receipt photo · an Items tab tracks how often and how much
+//  each thing is bought · the host can settle everything a person owes in one tap.
 
 const PRESETS=[['rice','🍚','Rice'],['water','💧','Water'],['other','🛒','']];
 const ICONS=['🛒','🧻','🧴','🔥','🥫','🍞','🥚','🧂'];
@@ -19,29 +21,32 @@ const basisText=(b,id)=>b.method==='stay'?dur(+b.basis?.[id]||0):b.method==='day
 
 export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
  const [B,setB]=useState([]),[D,setD]=useState([]),[ready,setReady]=useState(false),[err,setErr]=useState(''),
-  [tab,setTab]=useState('open'),[form,setForm]=useState(null),[open,setOpen]=useState(null),[busy,setBusy]=useState(false);
+  [tab,setTab]=useState('open'),[form,setForm]=useState(null),[open,setOpen]=useState(null),[busy,setBusy]=useState(false),[AL,setAL]=useState([]),[low,setLow]=useState(null),[bf,setBf]=useState(null),[zm,setZm]=useState(null);
  const ids=members.map(m=>m.id),byId=Object.fromEntries(members.map(m=>[m.id,m])),N=id=>nm(id)||'Former member',F=id=>N(id).split(' ')[0];
  const dref=(c,id)=>doc(db,'spaces',sp.id,c,id);
 
  // members read `buys`; only the host also reads the private drafts
  useEffect(()=>{
   const un=[onSnapshot(collection(db,'spaces',sp.id,'buys'),d=>{setB(d.docs.map(x=>({id:x.id,...x.data()})));setReady(true)},e=>{setErr(e.message);setReady(true)})];
+  un.push(onSnapshot(collection(db,'spaces',sp.id,'buyAlerts'),d=>setAL(d.docs.map(x=>({id:x.id,...x.data()}))),()=>{}));
   if(owner)un.push(onSnapshot(collection(db,'spaces',sp.id,'buyDrafts'),d=>setD(d.docs.map(x=>({id:x.id,...x.data()}))),()=>{}));
   return()=>un.forEach(x=>x())},[sp.id,owner]);
 
  const sorted=[...B].sort((a,b)=>(b.sentAt||0)-(a.sentAt||0)),
   unpaidOf=b=>Object.keys(b.shares||{}).filter(id=>id!==b.buyer&&+b.shares[id]>0&&!b.paid?.[id]&&ids.includes(id)),
   OPEN=sorted.filter(b=>unpaidOf(b).length),DONE=sorted.filter(b=>!unpaidOf(b).length),
-  st=fairness(B,ids),
+  st=fairness(B,ids),IT=itemStats(B),openAL=AL.filter(a=>a.status==='open').sort((a,b)=>b.createdAt-a.createdAt),
+  cycB=B.filter(b=>b.sentAt>=r[0]&&b.sentAt<r[1]),cycTotal=cycB.reduce((t,b)=>t+(+(b.actual>0?b.actual:b.total)||0),0),
+  lastOf=t=>{const x=IT.find(i=>i.key===String(t).trim().toLowerCase());return x?{qty:x.last.qty?String(x.last.qty):'',price:x.last.price?String(x.last.price):'',total:String(x.last.total),kind:x.last.kind||'other',emoji:x.last.emoji||'🛒'}:{}},
   myOwe=OPEN.reduce((t,b)=>t+(b.buyer!==u.uid&&!b.paid?.[u.uid]?+b.shares?.[u.uid]||0:0),0),
   myGet=OPEN.reduce((t,b)=>t+(b.buyer===u.uid?unpaidOf(b).reduce((a,id)=>a+(+b.shares[id]||0),0):0),0);
 
  // ---------- form ----------
- const blank=()=>({id:doc(collection(db,'spaces',sp.id,'buyDrafts')).id,sent:false,kind:'rice',emoji:'🍚',title:'Rice',qty:'1',price:'',total:'',
-  buyer:nextBuyer(st,ids)||u.uid,ids:[...ids],method:'stay',ps:d2s(r[0]),pe:d2s(Math.min(Date.now(),r[1]-864e5)),turn:nextPayer(st,ids)||u.uid,custom:{},needBy:'',note:''});
+ const blank=(o={})=>({alert:'',id:doc(collection(db,'spaces',sp.id,'buyDrafts')).id,sent:false,kind:'rice',emoji:'🍚',title:'Rice',qty:'1',price:'',total:'',
+  buyer:nextBuyer(st,ids)||u.uid,ids:[...ids],method:'stay',ps:d2s(r[0]),pe:d2s(Math.min(Date.now(),r[1]-864e5)),turn:nextPayer(st,ids)||u.uid,custom:{},needBy:'',note:'',...o});
  const fromDoc=(b,sent)=>({id:b.id,sent,kind:b.kind||'other',emoji:b.emoji||'🛒',title:b.title||'',qty:b.qty?String(b.qty):'',price:b.price?String(b.price):'',total:String(b.total??''),
   buyer:byId[b.buyer]?b.buyer:u.uid,ids:(b.ids||Object.keys(b.shares||{})).filter(id=>byId[id]),method:b.method||'equal',ps:d2s(b.ps||r[0]),pe:d2s(b.pe||Date.now()),
-  turn:byId[b.turn]?b.turn:(byId[b.buyer]?b.buyer:u.uid),custom:b.method==='custom'?{...(b.shares||{})}:{},needBy:b.needBy?d2s(b.needBy):'',note:b.note||''});
+  turn:byId[b.turn]?b.turn:(byId[b.buyer]?b.buyer:u.uid),custom:b.method==='custom'?{...(b.shares||{})}:{},needBy:b.needBy?d2s(b.needBy):'',note:b.note||'',alert:b.alert||''});
  const set=patch=>setForm(f=>({...f,...patch})),
   setQP=p=>setForm(f=>{const n={...f,...p},q=+n.qty,pr=+n.price;if(q>0&&pr>0)n.total=String(+(q*pr).toFixed(2));return n}),   // qty x price fills the total (you can still type the total yourself)
   pick=(k,e,t)=>set({kind:k,emoji:e,title:t});
@@ -55,7 +60,7 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
  const check=()=>{if(!form.title.trim())return 'Give it a name, like Rice or Water.';if(!(+form.total>0))return 'Enter the total amount.';if(!byId[form.buyer])return 'Pick who will buy it.';
   if((form.method==='stay'||form.method==='days')&&!(s2d(form.pe)>=s2d(form.ps)))return 'The period ends before it starts.';return pv.ok?'':pv.msg};
  const payload=now=>({title:form.title.trim().slice(0,40),emoji:form.emoji,kind:form.kind,qty:+form.qty||0,price:+form.price||0,total:+(+form.total).toFixed(2),buyer:form.buyer,ids:effIds,method:form.method,
-  ps:s2d(form.ps),pe:s2d(form.pe),turn:form.method==='turn'?form.turn:null,shares:pv.amounts,basis:pv.basis,needBy:form.needBy?s2d(form.needBy):null,note:form.note.trim().slice(0,140),updatedAt:now});
+  ps:s2d(form.ps),pe:s2d(form.pe),turn:form.method==='turn'?form.turn:null,shares:pv.amounts,basis:pv.basis,needBy:form.needBy?s2d(form.needBy):null,note:form.note.trim().slice(0,140),updatedAt:now,alert:form.alert||null});
 
  const saveDraft=async()=>{const e=check();if(e)return say(e,4500);setBusy(true);
   try{await setDoc(dref('buyDrafts',form.id),{...payload(Date.now()),savedAt:Date.now()});buzz();say('Draft saved. Only you can see it until you send it.',4500);setForm(null);setTab('open')}
@@ -66,8 +71,9 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
   try{const p=payload(now),old=form.sent?B.find(x=>x.id===form.id):null,paid={};
    if(+p.shares[p.buyer]>0)paid[p.buyer]=true;   // the buyer does not pay themselves back
    if(old)Object.keys(p.shares).forEach(id=>{if(old.paid?.[id]&&+old.shares?.[id]===+p.shares[id])paid[id]=true});   // keep "paid" for people whose share did not change
-   await setDoc(dref('buys',form.id),{...p,paid,createdAt:old?.createdAt||now,sentAt:now,edited:!!old});
+   await setDoc(dref('buys',form.id),{...p,paid,createdAt:old?.createdAt||now,sentAt:now,edited:!!old,...(old?{bought:!!old.bought,boughtAt:old.boughtAt||null,receipt:old.receipt||null}:{})});
    await deleteDoc(dref('buyDrafts',form.id)).catch(()=>{});
+   if(form.alert)updateDoc(dref('buyAlerts',form.alert),{status:'done',doneAt:now}).catch(()=>{});   // the "running low" report is answered
    ping({sid:sp.id,kind:'buy',id:form.id});buzz();say('Sent to your dormmates 📨',4000);setForm(null);setTab('open')}
   catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',7000)}finally{setBusy(false)}};
 
@@ -75,6 +81,23 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
  const togglePaid=async(b,id)=>{const was=!!b.paid?.[id];try{await updateDoc(dref('buys',b.id),{['paid.'+id]:!was});buzz();if(!was)ping({sid:sp.id,kind:'buypaid',id:b.id,target:id})}catch(e){say('Failed: '+e.message,5000)}};
  const remind=async b=>{setBusy(true);try{const j=await pingWait({sid:sp.id,kind:'buyremind',id:b.id});say(j.skipped?'Nothing sent: everyone has paid, or you already reminded them in the last hour.':`Reminder sent to ${j.sent} member${j.sent>1?'s':''} 🔔`,5000)}catch(e){say('Failed: '+e.message,5000)}finally{setBusy(false)}};
  const del=async(c,id,what)=>{if(!confirm(`Delete this ${what} permanently for everyone?`))return;try{await deleteDoc(dref(c,id));say('Deleted')}catch(e){say('Failed: '+e.message,5000)}};
+
+ // ---------- running low / bought / settle up ----------
+ const startLow=(o={})=>{setLow({kind:'other',emoji:'🛒',title:'',note:'',...o});setTab('open')};
+ const sendLow=async()=>{const t=low.title.trim();if(!t)return say('Say what is running low.');
+  if(openAL.some(a=>a.title.trim().toLowerCase()===t.toLowerCase()))return say(`${t} was already reported.`,3500);setBusy(true);
+  try{const ref=await addDoc(collection(db,'spaces',sp.id,'buyAlerts'),{uid:u.uid,title:t.slice(0,40),emoji:low.emoji,kind:low.kind,note:low.note.trim().slice(0,140),status:'open',createdAt:Date.now()});
+   ping({sid:sp.id,kind:'buylow',id:ref.id});setLow(null);buzz();say(owner?'Saved ✓':`${F(sp.ownerId)} was told 🔔`,4000)}
+  catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',7000)}finally{setBusy(false)}};
+ const dismissAlert=async a=>{try{if(owner)await updateDoc(dref('buyAlerts',a.id),{status:'dismissed',doneAt:Date.now()});else await deleteDoc(dref('buyAlerts',a.id));say('Removed')}catch(e){say('Failed: '+e.message,5000)}};
+ const markBought=async b=>{setBusy(true);
+  try{const up={bought:true,boughtAt:Date.now()};if(+bf.actual>0)up.actual=+(+bf.actual).toFixed(2);if(bf.receipt)up.receipt=bf.receipt;
+   await updateDoc(dref('buys',b.id),up);ping({sid:sp.id,kind:'bought',id:b.id});setBf(null);buzz();say('Marked as bought ✓ Everyone was told',4000)}
+  catch(e){say('Failed: '+e.message+' (publish the latest firestore.rules)',7000)}finally{setBusy(false)}};
+ const bulkPaid=async id=>{const L=B.filter(b=>b.buyer!==id&&+b.shares?.[id]>0&&!b.paid?.[id]);if(!L.length)return;
+  if(!confirm(`Mark all ${L.length} unpaid share${L.length>1?'s':''} of ${F(id)} (${peso(L.reduce((t,b)=>t+b.shares[id],0))}) as paid?`))return;setBusy(true);
+  try{const bt=writeBatch(db);L.forEach(b=>bt.update(dref('buys',b.id),{['paid.'+id]:true}));await bt.commit();L.forEach(b=>ping({sid:sp.id,kind:'buypaid',id:b.id,target:id}));buzz();say(`${F(id)} is settled ✓`,4000)}
+  catch(e){say('Failed: '+e.message,5000)}finally{setBusy(false)}};
 
  // ---------- pieces of the screen ----------
  const Head=({left,title,right})=><div className="rvbar">{left}<b style={{fontSize:17,flex:1,textAlign:'center'}}>{title}</b>{right}</div>;
@@ -88,7 +111,16 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
    {isBuyer?<div className="pnote">🛒 You buy this one. {un.length?`Still to get back: ${peso(un.reduce((t,id)=>t+(+b.shares[id]||0),0))}.`:'Everyone paid you back ✓'}</div>
     :mineAmt>0?<div className={`pnote`}>{b.paid?.[u.uid]?`✅ You paid your share of ${peso(mineAmt)}.`:`💸 Your share is ${peso(mineAmt)}. Pay ${F(b.buyer)}.`}</div>
     :<div className="pnote">You are not part of this one.</div>}
+   <div className="pnote row sp" style={{gap:8}}><span>{b.bought?`✅ Bought ${dshort(b.boughtAt)}${b.actual>0?` for ${peso(b.actual)}`:''}`:'🛒 Not bought yet'}</span>{b.receipt&&<img className="thumb" src={b.receipt} alt="receipt" onClick={()=>setZm(b.receipt)}/>}</div>
    {x&&<div style={{marginTop:10}}>
+    {owner&&b.actual>0&&Math.abs(b.actual-b.total)>=.01&&<div className="warn">The buyer says the real price was {peso(b.actual)} (the estimate was {peso(b.total)}). <button className="sm" style={{marginLeft:6}} onClick={()=>setForm({...fromDoc(b,true),total:String(b.actual)})}>Update amounts</button></div>}
+    {!b.bought&&(isBuyer||owner)&&(bf?.id===b.id
+     ?<div className="blk"><b>Mark as bought</b><p className="mut" style={{margin:'4px 0 8px'}}>Everyone is told it was bought. The real price and a receipt photo are optional.</p>
+       <label>Real total paid (₱, optional)</label><input type="number" inputMode="decimal" min="0" step="any" value={bf.actual} placeholder={String(b.total)} onChange={e=>setBf({...bf,actual:e.target.value})}/>
+       <input id="rcpt" type="file" accept="image/*" capture="environment" hidden onChange={async e=>{const f=e.target.files[0];if(f){const img=await shrink(f);setBf(v=>({...v,receipt:img}))}}}/>
+       <button className="w" style={{marginBottom:8}} onClick={()=>document.getElementById('rcpt').click()}>{bf.receipt?'📷 Receipt added ✓ (tap to change)':'📷 Add a receipt photo'}</button>
+       <div className="row"><button className="pri" style={{flex:1}} disabled={busy} onClick={()=>markBought(b)}>Confirm</button><button style={{flex:1}} onClick={()=>setBf(null)}>Cancel</button></div></div>
+     :<button className="pri w" style={{marginBottom:10}} onClick={()=>setBf({id:b.id,actual:'',receipt:null})}>✅ I bought it</button>)}
     {b.note&&<p className="mut" style={{marginBottom:8}}>📝 {b.note}</p>}
     {(b.qty>0||b.price>0)&&<p className="mut" style={{marginBottom:8}}>{b.qty>0?`Quantity ${b.qty}`:''}{b.qty>0&&b.price>0?' × ':''}{b.price>0?`${peso(b.price)} each`:''}</p>}
     {(b.method==='stay'||b.method==='days')&&<p className="mut" style={{marginBottom:8}}>Counted from {new Date(b.ps).toLocaleDateString([],{month:'short',day:'numeric'})} to {new Date(b.pe).toLocaleDateString([],{month:'short',day:'numeric'})}.</p>}
@@ -149,12 +181,31 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
    {!f.sent&&<button className="w" style={{marginBottom:8}} disabled={busy||!!err2} onClick={saveDraft}>💾 Save as draft (only me)</button>}
    <button className="w" onClick={()=>setForm(null)}>Cancel</button></div>};
 
+ // running-low report form + the open reports
+ const lowForm=()=>low&&<div className="card"><h3>⚠️ What is running low?</h3>
+  <div className="fchips" style={{paddingBottom:6}}>{PRESETS.map(([k,e,t])=><button key={k} className={`fchip ${low.kind===k?'on':''}`} onClick={()=>setLow({...low,kind:k,emoji:e,title:t||(low.kind==='other'?low.title:'')})}>{e} {t||'Something else'}</button>)}</div>
+  <label>Name</label><input value={low.title} maxLength={40} placeholder="e.g. Rice, Water, Dish soap" onChange={e=>setLow({...low,title:e.target.value})}/>
+  <label>Note (optional)</label><input value={low.note} maxLength={140} placeholder="e.g. Only enough for 2 days" onChange={e=>setLow({...low,note:e.target.value})}/>
+  <p className="mut" style={{marginBottom:10}}>{owner?'It is saved so you can turn it into a request.':`${F(sp.ownerId)} is notified and can turn it into a shopping request.`}</p>
+  <button className="pri w" style={{marginBottom:8}} disabled={busy||!low.title.trim()} onClick={sendLow}>Send</button><button className="w" onClick={()=>setLow(null)}>Cancel</button></div>;
+ const alertCard=a=><div key={a.id} className="card draft"><b>⚠️ {a.emoji||'🛒'} {a.title} is running low</b>
+  <div className="mut">{F(a.uid)}{a.uid===u.uid?' (you)':''} · {dshort(a.createdAt)}{a.note?` · “${a.note}”`:''}</div>
+  {owner&&<div className="row" style={{marginTop:10}}><button className="pri" style={{flex:1}} onClick={()=>setForm(blank({title:a.title,emoji:a.emoji||'🛒',kind:a.kind==='rice'||a.kind==='water'?a.kind:'other',alert:a.id,note:a.note||'',qty:'',...lastOf(a.title)}))}>Make a request</button><button className="sm" onClick={()=>dismissAlert(a)}>Dismiss</button></div>}
+  {!owner&&a.uid===u.uid&&<button className="sm w" style={{marginTop:8}} onClick={()=>dismissAlert(a)}>Cancel my report</button>}</div>;
+ const itemsView=()=><div>
+  <div className="card"><h3>Item tracker</h3><p className="mut" style={{marginBottom:8}}>Built from every request that was sent. It learns how often each thing is bought and what it costs, and tells you when it will probably run out again.</p>
+   <div className="row sp"><span className="mut">This cycle</span><b>{peso(cycTotal)} · {cycB.length} request{cycB.length===1?'':'s'}</b></div></div>
+  {IT.map(x=><div key={x.key} className="card"><div className="row sp"><b style={{fontSize:17}}>{x.emoji||'🛒'} {x.title}</b>{x.status!=='new'&&<span className={`tag ${x.status==='overdue'?'t-denied':x.status==='soon'?'t-pending':'t-approved'}`}>{x.status==='overdue'?'probably out':x.status==='soon'?'running out soon':'stocked'}</span>}</div>
+   <div className="mut" style={{margin:'6px 0'}}>Bought {x.times}× · average {peso(x.avg)} · total {peso(x.total)}</div>
+   <div className="mut">Last bought {dshort(x.lastAt)}{x.avgGap?` · about every ${Math.round(x.avgGap)} days · next around ${dshort(x.nextAt)}`:' · bought once so far, so no prediction yet'}</div>
+   <div className="row" style={{marginTop:10}}><button className="sm" style={{flex:1}} onClick={()=>startLow({kind:x.last.kind==='rice'||x.last.kind==='water'?x.last.kind:'other',emoji:x.emoji||'🛒',title:x.title})}>⚠️ Running low</button>{owner&&<button className="sm pri" style={{flex:1}} onClick={()=>setForm(blank({title:x.title,...lastOf(x.title)}))}>＋ New request</button>}</div></div>)}
+  {ready&&!IT.length&&<div className="card"><span className="mut">Nothing to track yet. Once the first request is sent, every item shows up here with how often it is bought.</span></div>}</div>;
  const fairView=()=><div>
   <div className="card"><h3>Fairness board</h3><p className="mut" style={{marginBottom:10}}>Built from every request that was sent. It helps decide who should go and buy next, and whose turn it is to pay.</p>
    {ids.length>0&&<div className="pnote" style={{marginBottom:10}}>👉 Next to buy: <b>{F(nextBuyer(st,ids))}</b> · Next to pay (turn): <b>{F(nextPayer(st,ids))}</b></div>}
    {members.map(m=>{const s=st[m.id];return <div key={m.id} className="shr"><Av m={m}/><div style={{flex:1,minWidth:0}}><b>{m.n.split(' ')[0]}{m.id===u.uid&&<span className="mut"> · you</span>}</b>
      <div className="mut">🛒 bought {s.bought}× · 💸 paid {peso(s.spent)} in total</div></div>
-     <div style={{textAlign:'right'}}>{s.owes>0&&<div><span className="tag t-pending">owes {peso(s.owes)}</span></div>}{s.toGet>0&&<div style={{marginTop:4}}><span className="tag t-approved">to get {peso(s.toGet)}</span></div>}{!s.owes&&!s.toGet&&<span className="mut">settled</span>}</div></div>})}</div></div>;
+     <div style={{textAlign:'right'}}>{s.owes>0&&<div><span className="tag t-pending">owes {peso(s.owes)}</span></div>}{owner&&s.owes>0&&<button className="sm" style={{marginTop:6}} disabled={busy} onClick={()=>bulkPaid(m.id)}>Mark all paid</button>}{s.toGet>0&&<div style={{marginTop:4}}><span className="tag t-approved">to get {peso(s.toGet)}</span></div>}{!s.owes&&!s.toGet&&<span className="mut">settled</span>}</div></div>})}</div></div>;
 
  // ---------- the window ----------
  return <div className="rv">
@@ -166,9 +217,11 @@ export default function Buys({u,sp,owner,members,nm,say,stay,r,onClose}){
    {err&&<div className="warn">Could not load: {err}. If this says “permission”, the host needs to publish the latest firestore.rules.</div>}
    {(myOwe>0||myGet>0)&&<div className="row" style={{gap:8,marginBottom:12,flexWrap:'wrap'}}>{myOwe>0&&<span className="chip">💸 You still owe {peso(myOwe)}</span>}{myGet>0&&<span className="chip">💰 You are still owed {peso(myGet)}</span>}</div>}
    {owner&&<button className="pri w" style={{marginBottom:12}} onClick={()=>setForm(blank())}>＋ New request (rice, water, anything)</button>}
-   <div className="seg">{[['open',`Open · ${OPEN.length}${owner&&D.length?` +${D.length} draft${D.length>1?'s':''}`:''}`],['done',`Done · ${DONE.length}`],['fair','Fairness']].map(([k,l])=><button key={k} className={tab===k?'on':''} onClick={()=>setTab(k)}>{l}</button>)}</div>
-   {tab==='open'&&<>{owner&&[...D].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)).map(draftCard)}{OPEN.map(card)}
-    {ready&&!OPEN.length&&!(owner&&D.length)&&<div className="card"><span className="mut">{owner?'Nothing open. Tap “New request” to ask someone to buy rice, water or anything else.':'Nothing to pay right now. When the host sends a request you will get a notification, and it shows up here.'}</span></div>}</>}
+   <button className="w" style={{marginBottom:12}} onClick={()=>startLow()}>⚠️ Something is running low</button>
+   <div className="seg">{[['open',`Open · ${OPEN.length}${owner&&D.length?` +${D.length} draft${D.length>1?'s':''}`:''}`],['items','Items'],['done',`Done · ${DONE.length}`],['fair','Fairness']].map(([k,l])=><button key={k} className={tab===k?'on':''} onClick={()=>setTab(k)}>{l}</button>)}</div>
+   {tab==='open'&&<>{lowForm()}{openAL.map(alertCard)}{owner&&[...D].sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)).map(draftCard)}{OPEN.map(card)}
+    {ready&&!OPEN.length&&!openAL.length&&!(owner&&D.length)&&<div className="card"><span className="mut">{owner?'Nothing open. Tap “New request” to ask someone to buy rice, water or anything else.':'Nothing to pay right now. When the host sends a request you will get a notification, and it shows up here.'}</span></div>}</>}
    {tab==='done'&&<>{DONE.map(card)}{ready&&!DONE.length&&<div className="card"><span className="mut">Requests where everyone has paid appear here.</span></div>}</>}
+   {tab==='items'&&itemsView()}
    {tab==='fair'&&fairView()}
-  </div>}</div></div>}
+  </div>}</div>{zm&&<div className="lb" onClick={()=>setZm(null)}><img src={zm} alt=""/></div>}</div>}

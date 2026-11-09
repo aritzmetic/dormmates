@@ -1,6 +1,6 @@
 import {createHash,timingSafeEqual} from 'node:crypto';
-import {db,push,who,others} from './_lib.js';
-import {norm} from '../src/lib.js';
+import {db,push,who,others,offDocs} from './_lib.js';
+import {norm,withOff} from '../src/lib.js';
 
 // Called by a phone automation (iPhone Shortcuts / Android MacroDroid / Tasker) when the phone connects to or disconnects from the DORM Wi-Fi.
 // It works while the DormMate app is closed.
@@ -23,7 +23,7 @@ export default async function handler(req,res){
     if(!sp||!(sp.members||[]).includes(uid))return res.status(404).json({error:'not a member of this space'});
     const wifi=sp.cfg?.wifi||[];
     if(event==='status'){   // read-only check used by Settings → "Check my connection"
-      const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data()),last=norm(uid,rows,Date.now()).at(-1);
+      const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data()),last=norm(uid,withOff(rows,await offDocs(sd.ref)),Date.now()).at(-1);
       return res.json({ok:true,space:sp.name,host:sp.ownerId===uid,timedIn:last?.type==='in',lastPunch:last?{type:last.type,at:last.ts,auto:!!last.auto,wifi:!!last.wifi}:null,wifi,wifiAuto:p.wifiAuto!==false,grace:+sp.cfg?.wifiGrace||5,last:p.lastPresence||null})}
     if(event==='test'){const n=await push([uid],{title:'✅ Auto-detect works',body:`${sp.name}: your phone can reach DormMate. Connecting to the dorm Wi-Fi will time you in automatically.`,tag:'presence-test'});return res.json({ok:true,devices:n})}
     // if the automation sends the network name, only the dorm's Wi-Fi counts
@@ -32,7 +32,7 @@ export default async function handler(req,res){
     await pr.set({lastPresence:{event,at:Date.now()}},{merge:true});
 
     const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data());
-    const inside=norm(uid,rows,Date.now()).at(-1)?.type==='in',t=Date.now(),net=ssid||wifi[0]||'the dorm Wi-Fi',pres=sd.ref.collection('presence').doc(uid);
+    const inside=norm(uid,withOff(rows,await offDocs(sd.ref)),Date.now()).at(-1)?.type==='in',t=Date.now(),net=ssid||wifi[0]||'the dorm Wi-Fi',pres=sd.ref.collection('presence').doc(uid);
     // remember what happened, so Settings can show "last signal from your phone" and why nothing changed
     const fin=async(j,r)=>{await pr.set({lastPresence:{event,at:Date.now(),result:r,ssid:net}},{merge:true});return res.json(j)};
 

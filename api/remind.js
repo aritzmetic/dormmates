@@ -1,6 +1,6 @@
 process.env.TZ='Asia/Manila';
-import {db,push} from './_lib.js';
-import {away} from '../src/lib.js';
+import {db,push,offDocs} from './_lib.js';
+import {away,withOff} from '../src/lib.js';
 
 // Called by an outside timer (cron-job.org) at 7:30 PM and 7:55 PM Manila time.
 // Pushes "confirm you are away" to anyone who is timed out and inside the confirm window.
@@ -13,7 +13,7 @@ export default async function handler(req,res){
     const spaces=await db.collection('spaces').get();
     await Promise.all(spaces.docs.map(async s=>{
       const q=await s.ref.collection('punches').orderBy('ts','desc').limit(150).get();
-      const P=q.docs.map(d=>d.data());
+      const P=withOff(q.docs.map(d=>d.data()),await offDocs(s.ref));
       for(const uid of s.data().members||[]){
         const a=away(uid,P,now);
         if(a?.open)due.set(uid,Math.min(due.get(uid)??99,Math.max(1,Math.round((a.D-now)/6e4))));

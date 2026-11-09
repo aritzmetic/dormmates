@@ -44,3 +44,18 @@ export function fairness(buys,ids){
 // who should go and buy next (fewest times so far), and whose turn it is to pay (has paid the least so far)
 export const nextBuyer=(st,ids)=>[...ids].sort((a,b)=>st[a].bought-st[b].bought||st[a].spent-st[b].spent)[0];
 export const nextPayer=(st,ids)=>[...ids].sort((a,b)=>st[a].spent-st[b].spent||st[a].bought-st[b].bought)[0];
+
+// ITEM TRACKER: one row per thing the dorm buys (matched by name, so "Rice" and "rice " are the same item).
+//  times / total / avg = how often and how much (the buyer's real price is used when they entered one)
+//  avgGap = average days between purchases · nextAt = when it will probably run out again · status = 'overdue' | 'soon' | 'ok' | 'new'
+export function itemStats(buys,now=Date.now()){
+ const m=new Map();
+ [...buys].sort((a,b)=>(a.sentAt||0)-(b.sentAt||0)).forEach(b=>{
+  const k=String(b.title||'').trim().toLowerCase();if(!k)return;
+  const x=m.get(k)||{key:k,times:0,total:0,dates:[]};
+  x.times++;x.total=r2(x.total+(+(b.actual>0?b.actual:b.total)||0));x.dates.push(b.sentAt||0);x.last=b;x.title=b.title;x.emoji=b.emoji||x.emoji;m.set(k,x)});
+ return [...m.values()].map(x=>{
+  const gaps=x.dates.slice(1).map((t,i)=>(t-x.dates[i])/864e5),avgGap=gaps.length?+(gaps.reduce((a,c)=>a+c,0)/gaps.length).toFixed(1):null,lastAt=x.dates.at(-1),
+   nextAt=avgGap?lastAt+avgGap*864e5:null,left=nextAt?(nextAt-now)/864e5:null;
+  return{...x,avg:r2(x.total/x.times),lastAt,avgGap,nextAt,status:left==null?'new':left<0?'overdue':left<=3?'soon':'ok'}})
+ .sort((a,b)=>b.lastAt-a.lastAt)}

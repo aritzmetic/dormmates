@@ -7,6 +7,18 @@ import {motion} from 'framer-motion';
 // An item marked  host:true  is only shown to the host.
 // ---------------------------------------------------------------------------------------------
 export const UPDATES=[
+ {v:6,date:'Nov 2, 2026',title:'Skip auto time-in, fixes open at midnight, better Shared buys',sections:[
+  {h:'8 PM auto time-in',items:[
+   ['🌙','Going away for a few days? Settings → 8 PM auto time-in: ask the host to turn it off for the days you choose. You are not timed in at 8:00 PM on those days once the host approves.'],
+   ['✅','The host approves or denies, and can turn it back on later. Days that already passed are never rewritten.',true]]},
+  {h:'Fixes',items:[
+   ['📅','A day opens for fixes at 12:00 AM the next day. At 12:01 AM you can already fix 12:00 AM to 11:59 PM yesterday. Today stays locked.'],
+   ['🛠','Fixed a bug that stopped “Time in / out”, “Time in only” and “Time out only” requests from being sent.']]},
+  {h:'Shared buys (beta)',items:[
+   ['⚠️','Anyone can tap “Something is running low”. The host is told and can turn it into a request in one tap.'],
+   ['✅','The buyer taps “I bought it” with the real price and a receipt photo, and everyone is told. If the real price differs, the host can update the amounts.'],
+   ['📈','New Items tab: how often and how much each thing is bought, and when it will probably run out.'],
+   ['💸','The host can mark everything one person owes as paid in a single tap.',true]]}]},
  {v:5,date:'Nov 1, 2026',title:'Gallery, Shared buys and a steadier auto time-in',sections:[
   {h:'Auto time-in',items:[
    ['⏰','The 8:00 PM auto time-in now always follows Manila time, on every phone and on the server. Before, the server could disagree with your phone between 8 PM and 4 AM, so Wi-Fi time in / out sometimes did nothing.'],

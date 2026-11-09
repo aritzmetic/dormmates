@@ -137,6 +137,23 @@ export default async function handler(req,res){
       let n=1;if(d.batch){const q=await sref.collection('exceptions').where('batch','==',d.batch).get();n=q.docs.filter(z=>z.data().status===d.status&&Math.abs((z.data().decidedAt||0)-d.decidedAt)<6e4).length||1}
       msg={title:d.status==='approved'?'✅ Fix approved':'❌ Fix denied',body:cut(`${KIND[d.kind||'add']}${n>1?` · ${n} days`:''} · “${d.reason||'no reason'}”`),tag:'fix-'+id};
     }
+    else if(kind==='offreq'){
+      // a member asked the host to turn the 8 PM auto time-in off for some days
+      const{r,d}=await get('autoOff');
+      if(owner||!d||d.uid!==uid||d.status!=='pending'||!fresh(d.createdAt)||d.pushed)return skip();
+      await r.update({pushed:true});to=[sp.ownerId];
+      msg={title:`🌙 ${who(sp,uid)} asked to skip the 8 PM auto time-in`,body:cut(`${dd(d.a)}${d.b>d.a?' – '+dd(d.b):''} · “${d.reason||'no reason'}”. Open Settings → 8 PM auto time-in to decide.`),tag:'offreq-'+id};
+    }
+    else if(kind==='offdecision'){
+      const{r,d}=await get('autoOff');
+      const stamp=d&&(d.status==='revoked'?d.revokedAt:d.decidedAt);
+      if(!owner||!d||!['approved','denied','revoked'].includes(d.status)||!stamp||!fresh(stamp)||d.pushedDecision===d.status+':'+stamp||d.uid===uid)return skip();
+      await r.update({pushedDecision:d.status+':'+stamp});to=[d.uid];
+      const days=`${dd(d.a)}${d.b>d.a?' – '+dd(d.b):''}`;
+      msg=d.status==='approved'?{title:'✅ No auto time-in approved',body:`You will not be timed in at 8:00 PM on ${days}.`,tag:'offdec-'+id}
+        :d.status==='denied'?{title:'❌ Request declined',body:`${who(sp,uid)} declined turning off the 8 PM auto time-in for ${days}.`,tag:'offdec-'+id}
+        :{title:'🌙 Auto time-in is back on',body:`${who(sp,uid)} turned the 8 PM auto time-in back on for you (${days}).`,tag:'offdec-'+id};
+    }
     else if(kind==='buy'){
       // SHARED BUYS (beta): the host sent a request. Every member gets the RESULT with THEIR OWN share (the amounts were frozen when it was sent).
       const{r,d}=await get('buys');
@@ -151,6 +168,20 @@ export default async function handler(req,res){
           :`${buyer} will buy it. You are not part of this one.`;
         dev+=await push([m],{title:`${em} ${d.edited?'Updated: ':''}${ttl}`,body:cut(body,200),tag:'buy-'+id});sent++}
       return res.json({ok:true,sent,devices:dev});
+    }
+    else if(kind==='buylow'){
+      // a member reports that something is running low: the host is told (the host's own report notifies nobody)
+      const{r,d}=await get('buyAlerts');
+      if(owner||!d||d.uid!==uid||d.status!=='open'||!fresh(d.createdAt)||d.pushed)return skip();
+      await r.update({pushed:true});to=[sp.ownerId];
+      msg={title:`⚠️ ${who(sp,uid)}: ${cut(d.title,40)} is running low`,body:cut(d.note?`“${d.note}”. Open Shared buys to make a request.`:'Open Shared buys to make a request.'),tag:'buylow-'+id};
+    }
+    else if(kind==='bought'){
+      // the buyer (or the host) marked a request as bought: tell everyone else
+      const{r,d}=await get('buys');
+      if(!d||!d.bought||!d.boughtAt||(uid!==d.buyer&&!owner)||!fresh(d.boughtAt)||d.boughtPushed===d.boughtAt)return skip();
+      await r.update({boughtPushed:d.boughtAt});to=others(sp,uid);
+      msg={title:`${d.emoji||'🛒'} ${cut(d.title,40)} was bought`,body:cut(`${who(sp,uid)} bought it${d.actual>0?` for ${money(d.actual)}`:''}.${d.receipt?' Receipt attached.':''} Open Shared buys to see your share.`),tag:'bought-'+id};
     }
     else if(kind==='buyremind'){
       const{r,d}=await get('buys');

@@ -60,8 +60,9 @@ function Block({i,b,cap,lo=0,hi=cap,taken=[],act,setAct,onChange,onRemove,fm,lab
   <p className="mut" style={{fontSize:11,margin:'0 0 6px'}}>The buttons below change the <b>{h==='s'?'time in':'time out'}</b>. Tap a time above to switch.</p>
   <div className="tp-b">{NUD.map(([d,l])=><button type="button" key={l} onClick={()=>nudge(d)}>{l}</button>)}</div></div>}
 
+const LOCK='Fixes only cover days before today. Today opens up at 12:00 AM tomorrow.';
 export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,col,ping,zoom,showN,presets=[],savePresets}){
- const cfg=sp.cfg||{},now=Date.now(),lim=now-864e5,   // nothing from the last 24 hours (or later) can be fixed, so a fix can never change the current time
+ const cfg=sp.cfg||{},now=Date.now(),lim=+dayAt(now,0),   // a fix can cover anything BEFORE today (12:00 AM). At 12:01 AM yesterday opens up; today stays locked until the next 12:00 AM, so a fix never changes the current day
   sid=sp.id,maxD=cfg.fixMaxDays||31,oldest=!owner&&cfg.fixBackDays>0?+dayAt(now,-cfg.fixBackDays):0,auto=owner&&cfg.hostAuto!==false;
  const [fw,setFw]=useState(owner?'all':u.uid),[fs,setFs]=useState('all'),[ex,setEx]=useState({}),[dy,setDy]=useState(null),[ef,setEf]=useState(null),[busy,setBusy]=useState(false),[vu,setVu]=useState(u.uid),[more,setMore]=useState(false);
  // host can look at any member's punches (counter-check). Changes made while looking at someone else are SUGGESTIONS that member must accept.
@@ -98,27 +99,27 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
 
  // ---------- send ----------
  const prevOf=a=>norm(tu,P,Date.now()).filter(e=>e.ts<a).at(-1)?.ts||0;   // the event right before a given moment
- const send=async()=>{if(busy)return;const d0=dy,t0=Date.now(),reason=ef.r.trim();
+ const send=async()=>{if(busy)return;const d0=dy,t0=Date.now(),lim0=+dayAt(t0,0),reason=ef.r.trim();   // lim0 = 12:00 AM today: only earlier times can be fixed
   if(cfg.needReason!==false&&!reason)return say('Add a short reason.');
   const mk=o=>({uid:tu,v:2,reason,status:sg?'suggested':'pending',createdAt:t0,cyc:String(cycOf(o.day,cd)),...(sg?{suggestedBy:u.uid}:{}),...o});let docs=[];
-  if(ef.mode==='inout'&&!ef.multi){const BL=[...(ef.blocks||[])].sort((a,b)=>a.s-b.s),cap=Math.min(1439,Math.floor((t0-864e5-d0)/6e4));
+  if(ef.mode==='inout'&&!ef.multi){const BL=[...(ef.blocks||[])].sort((a,b)=>a.s-b.s),cap=Math.min(1439,Math.floor((lim0-d0)/6e4));
    if(!BL.length&&!(ef.rm||[]).length)return say('Add a time in / out, or choose a session to remove.');
    if(BL.some(b=>!(b.e>b.s)))return say('Each time out must be after its time in.');
-   if(BL.some(b=>b.e>cap))return say("Fixes only cover times older than 24 hours.");
+   if(BL.some(b=>b.e>cap))return say(LOCK);
    if(BL.some((b,k)=>k&&b.s<=BL[k-1].e))return say('Blocks cannot overlap. Leave a gap between a time out and the next time in.',5000);
    docs=BL.map(b=>{const a=d0+b.s*6e4,z=b.e>=1439?eod(d0):d0+b.e*6e4;return mk({kind:'add',mode:'inout',day:d0,inTs:a,outTs:z,cutA:a,cutB:z})});
    // sessions the user ticked to remove go in the SAME request, and always first, so they are applied before the replacement blocks
    docs.unshift(...(ef.rm||[]).map(k=>{const[ca,cb]=k.split('-').map(Number);return mk({kind:'remove',mode:'remove',day:d0,inTs:ca,outTs:cb,cutA:ca,cutB:cb,origA:ca,origB:cb})}))}
   else if(ef.mode==='inout'){const a=+new Date(ef.i),b=+new Date(ef.o);
-   if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>t0-864e5)return say('Fixes only cover times older than 24 hours.',5000);
+   if(!(a>0&&b>a))return say('Time out must be after time in.');if(b>lim0)return say(LOCK,5000);
    const sg=splitDays(a,b);if(sg.length>maxD)return say(`That is ${sg.length} days. The limit per request is ${maxD} days.`,5000);
    docs=sg.map(s=>mk({kind:'add',mode:'inout',day:s.day,inTs:s.a,outTs:s.b,cutA:s.a,cutB:s.b}))}
-  else if(ef.mode==='in'||ef.mode==='out'){const T=at(d0,ef.t);if(!(T>0))return say('Pick a time.');if(T>t0-864e5)return say('Fixes only cover times older than 24 hours.',5000);const c=fixCheck(tu,P,ef.mode,T,t0);if(!c.ok)return say(c.msg,6000);
+  else if(ef.mode==='in'||ef.mode==='out'){const T=at(d0,ef.t);if(!(T>0))return say('Pick a time.');if(T>lim0)return say(LOCK,5000);const c=fixCheck(tu,P,ef.mode,T,t0);if(!c.ok)return say(c.msg,6000);
    docs=[mk({kind:ef.mode,mode:ef.mode,day:d0,ts:T})]}
-  if(docs.some(x=>(x.outTs??x.ts??0)>t0-864e5))return say('Fixes only cover times older than 24 hours.',5000);
   else if(ef.mode==='edit'){const A=at(d0,ef.ti),B2=at(d0,ef.to);if(!(A>0&&B2>A))return say('Time out must be after time in.');if(B2>t0+6e4)return say("Time out can't be in the future.");
    docs=[mk({kind:'edit',mode:'edit',day:d0,inTs:A,outTs:B2,cutA:ef.s.ca,cutB:ef.s.cb,origA:ef.s.ca,origB:ef.s.cb})]}
   else docs=[mk({kind:'remove',mode:'remove',day:d0,inTs:ef.s.ca,outTs:ef.s.cb,cutA:ef.s.ca,cutB:ef.s.cb,origA:ef.s.ca,origB:ef.s.cb})];
+  if(docs.some(x=>(x.outTs??x.ts??0)>lim0))return say(LOCK,5000);   // every kind of request: nothing from today (or later)
   const bad=[...new Set(docs.map(x=>cycOf(x.day,cd)))].find(lockOf);
   if(bad!=null)return say(`Fix requests are closed for the cycle starting ${new Date(bad).toLocaleDateString([],{month:'short',day:'numeric'})}.`,5000);
   if(oldest&&docs.some(x=>x.day<oldest))return say(`Requests can only go back ${cfg.fixBackDays} days.`,5000);
@@ -147,7 +148,7 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    let pv=null,ok=true,hint=null,form=null;
    if(ef.mode==='inout'&&!ef.multi){
     const cap=Math.min(1439,capM),BL=ef.blocks||[],act=ef.act||{i:0,h:'s'},srt=[...BL].sort((a,b)=>a.s-b.s);
-    const rm=ef.rm||[],err=!BL.length&&!rm.length?'Add a time in / out, or choose a session to remove.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?"Fixes only cover times older than 24 hours.":srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
+    const rm=ef.rm||[],err=!BL.length&&!rm.length?'Add a time in / out, or choose a session to remove.':srt.find(b=>!(b.e>b.s))?'Each time out must be after its time in.':srt.find(b=>b.e>cap)?LOCK:srt.find((b,k)=>k&&b.s<=srt[k-1].e)?'Blocks cannot overlap. Leave a gap between a time out and the next time in.':null;
     ok=!err;
     const tot=srt.reduce((t,b)=>t+(b.e-b.s),0)/60,setBl=bl=>setEf({...ef,blocks:bl}),setAct=(i,h)=>setEf({...ef,act:{i,h}}),
      applyPre=p=>{const bl=pb(p).map(b=>({s:b.s,e:Math.min(b.e,cap)})).filter(b=>b.e>b.s&&b.s<cap);if(!bl.length)return say('That preset does not fit before the current time.',4000);setEf({...ef,blocks:bl,act:{i:0,h:'s'}})},
@@ -183,11 +184,11 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
     form=<><label>Time in</label><input type="datetime-local" value={ef.i} onChange={e=>setEf({...ef,i:e.target.value})}/><label>Time out</label><input type="datetime-local" value={ef.o} onChange={e=>setEf({...ef,o:e.target.value})}/>
       <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({mode:'inout',blocks:[{s:0,e:Math.min(1439,capM)}],act:{i:0,h:'s'},r:ef.r})}>↩ Back to one day (time in / out blocks)</button></>;
     hint='Starts at 12:00 AM and ends at 11:59 PM by default, change it if needed. Once approved, this replaces any punches inside that window. For several days, set the time in on the first day and the time out on the last day.';
-    pv=!sg.length?<div className="pv bad">Time out must be after time in.</div>:b>lim?<div className="pv bad">Fixes only cover times older than 24 hours. The latest time out you can use is {fmt(lim)}.</div>:sg.length>maxD?<div className="pv bad">That is {sg.length} days. The limit per request is {maxD} days.</div>
+    pv=!sg.length?<div className="pv bad">Time out must be after time in.</div>:b>lim?<div className="pv bad">Fixes only cover days before today. The latest time out you can use is {fmt(lim-6e4)}.</div>:sg.length>maxD?<div className="pv bad">That is {sg.length} days. The limit per request is {maxD} days.</div>
      :<div className="pv"><div className="row sp"><b>{sg.length>1?`${sg.length} days`:'1 day'}</b><b>{dur(tot)}</b></div>
        {sg.length>1&&<p className="mut" style={{margin:'4px 0 8px'}}>Each day is its own request, so you can change or cancel one day without touching the rest.</p>}
        {(sg.length>5?[sg[0],sg[1],null,sg.at(-1)]:sg).map((s,k)=>s?<div key={k} className="row sp mut"><span>{dayName(s.day)}</span><span>{tm(s.a)} → {tm(s.b)}</span></div>:<div key={k} className="mut" style={{textAlign:'center'}}>⋮ {sg.length-3} more days ⋮</div>)}</div>}
-   else if(ef.mode==='in'||ef.mode==='out'){const T=at(d0,ef.t),c=T>lim?{ok:false,msg:'Fixes only cover times older than 24 hours.'}:T>0?fixCheck(tu,P,ef.mode,T,now):{ok:false,msg:'Pick a time.'};ok=c.ok;
+   else if(ef.mode==='in'||ef.mode==='out'){const T=at(d0,ef.t),c=T>lim?{ok:false,msg:LOCK}:T>0?fixCheck(tu,P,ef.mode,T,now):{ok:false,msg:'Pick a time.'};ok=c.ok;
     const tmM=hmM(ef.t);
     form=!ef.typed&&Number.isFinite(tmM)?<><TimePick label={ef.mode==='in'?'What time did you time in?':'What time did you time out?'} v={tmM} max={Math.min(1439,capM)} fm={fm} onChange={m=>setEf({...ef,t:hm(d0+m*6e4)})}/>
       <button type="button" className="sm w" style={{marginBottom:10}} onClick={()=>setEf({...ef,typed:true})}>⌨️ Type the exact time instead</button></>
@@ -214,18 +215,18 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
   const proofOf=p=>p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null;
   return <><h2>{title}</h2>{sg&&<div className="warn" style={{marginTop:8}}>🔍 Viewing <b>{nm(tu)}</b>'s punches. Anything you change is sent as a <b>suggestion</b> they must accept.</div>}<p className="mut" style={{margin:'4px 0 14px'}}>{dur(iv(tu,P,X,[d0,d1]).reduce((t,[a,b])=>t+b-a,0)/36e5)} logged this day</p>
    {PN>0&&<div className="warn">⏳ {PN} request{PN>1?'s':''} pending for this day.</div>}
-   {owner&&<div className="sess"><b>Punches on this day</b>{RAW.length?RAW.map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> · {tm(p.ts)}<div className="mut">{p.fix?'approved fix':p.wifi?(p.by?'timed out by host (left Wi-Fi)':'auto time-in (dorm Wi-Fi)'):p.auto?'auto time-in (8:00 PM)':p.photo?'photo proof':p.loc?'location proof':p.type==='away'?'proof sent':'no proof'}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{proofOf(p)}</div>):<p className="mut" style={{marginTop:6}}>No punches recorded.</p>}</div>}
+   {owner&&<div className="sess"><b>Punches on this day</b>{RAW.length?RAW.map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?(p.off?'Auto time-in off (approved)':'Confirmed away'):p.type==='in'?'Time in':'Time out'}</b> · {tm(p.ts)}<div className="mut">{p.fix?'approved fix':p.wifi?(p.by?'timed out by host (left Wi-Fi)':'auto time-in (dorm Wi-Fi)'):p.auto?'auto time-in (8:00 PM)':p.photo?'photo proof':p.loc?'location proof':p.type==='away'?(p.off?'approved by the host':'proof sent'):'no proof'}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{proofOf(p)}</div>):<p className="mut" style={{marginTop:6}}>No punches recorded.</p>}</div>}
    {SS.map((s,i)=><div key={i} className="sess"><b>{span(s)}</b><div className="mut">{dur((s.cb-s.ca)/36e5)}{s.live?' · still timed in':''}{s.fix?' · approved fix':''}{s.ip?.auto?' · auto time-in':''}{s.a<d0?' · started yesterday':''}</div>
-    {!LK&&!s.live&&s.cb>lim&&<p className="mut" style={{marginTop:8}}>🔒 Within the last 24 hours, so it cannot be changed yet.</p>}
+    {!LK&&!s.live&&s.cb>lim&&<p className="mut" style={{marginTop:8}}>🔒 This is today, so it cannot be changed yet. It opens at 12:00 AM tomorrow.</p>}
     {!LK&&!s.live&&s.cb<=lim&&<div className="row" style={{marginTop:10}}><button className="sm" style={{flex:1}} onClick={()=>startEdit(s)}>✏️ Edit</button><button className="sm no" style={{flex:1}} onClick={()=>startRemove(s)}>🗑 Remove</button></div>}
     {s.live&&<div className="mut" style={{marginTop:6}}>Tip: forgot to time out? Use “Time out only” below.</div>}</div>)}
    {!SS.length&&<p className="mut" style={{marginBottom:12}}>No time logged on this day.</p>}
    {LK?<div className="warn">🔒 Fix requests are closed for this day{d0<oldest?` (members can go back ${cfg.fixBackDays} days)`:''}.</div>
    :<><h3 style={{margin:'14px 0 10px',fontSize:16}}>What do you need to fix?</h3><div className="tiles">
-     {capM<5&&<div className="warn" style={{gridColumn:'1/-1'}}>🔒 Fixes only cover times older than 24 hours, so a fix can never change your current time. {d0>lim?'This day opens up gradually: a time can be fixed 24 hours after it happened.':'Only the early part of this day can be fixed.'}</div>}
+     {capM<5&&<div className="warn" style={{gridColumn:'1/-1'}}>🔒 Today cannot be fixed yet. A day opens for fixes at 12:00 AM the next day.</div>}
      {tile('edit','✏️','Edit','Change a session’s times',()=>edits.length===1?startEdit(edits[0]):edits.length?setEf({mode:'pick'}):say('No session to edit on this day. Use one of the add options.',3500),!edits.length)}
-     {tile('inout','⏱','Time in / out','Add one or more time in / out blocks, or several days',()=>capM<5?say('Fixes only cover times older than 24 hours.',4500):setEf({mode:'inout',blocks:[{s:0,e:Math.min(1439,capM)}],act:{i:0,h:'s'},r:''}),capM<5)}
-     {tile('in','🟢','Time in only','I forgot to time in',()=>capM<5?say('Fixes only cover times older than 24 hours.',4500):setEf({mode:'in',t:'00:00',r:''}),capM<5)}
+     {tile('inout','⏱','Time in / out','Add one or more time in / out blocks, or several days',()=>capM<5?say(LOCK,4500):setEf({mode:'inout',blocks:[{s:0,e:Math.min(1439,capM)}],act:{i:0,h:'s'},r:''}),capM<5)}
+     {tile('in','🟢','Time in only','I forgot to time in',()=>capM<5?say(LOCK,4500):setEf({mode:'in',t:'00:00',r:''}),capM<5)}
      {tile('out','🔴','Time out only','I forgot to time out',()=>setEf({mode:'out',t:eod(d0)>lim?hm(lim):'23:59',r:''}))}</div></>}</>};
 
  // ---------- request list ----------
@@ -264,11 +265,11 @@ export default function Fixes({u,sp,owner,members,nm,P,X,B,r,off,setOff,cd,say,c
    <div className="fchips" style={{paddingBottom:0}}>{members.map(m=><button key={m.id} className={`fchip ${tu===m.id?'on':''}`} onClick={()=>{setVu(m.id);setDy(null);setEf(null)}}>{m.id===u.uid?'Me':m.n.split(' ')[0]}</button>)}</div>
    {(()=>{const ev=[...norm(tu,P),...P.filter(p=>p.uid===tu&&p.type==='away')].filter(p=>p.ts>=r[0]&&p.ts<r[1]).sort((a,b)=>b.ts-a.ts);
     return <><p className="mut" style={{margin:'12px 0 4px'}}>{nm(tu)} · {ev.length} punch{ev.length===1?'':'es'} this cycle</p>
-    {ev.slice(0,more?200:6).map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?'Confirmed away':p.type==='in'?'Time in':'Time out'}</b> <span className="mut">{p.auto?'· auto':p.fix?'· fix':''}</span><div className="mut">{fmt(p.ts)}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null}<button className="sm" onClick={()=>{setDy(+dayAt(p.ts,0));setEf(null)}}>Review</button></div>)}
+    {ev.slice(0,more?200:6).map((p,i)=><div key={i} className="pu"><span className="ic">{p.type==='in'?'🟢':p.type==='out'?'🔴':'📍'}</span><div style={{flex:1}}><b>{p.type==='away'?(p.off?'Auto time-in off (approved)':'Confirmed away'):p.type==='in'?'Time in':'Time out'}</b> <span className="mut">{p.auto?'· auto':p.fix?'· fix':''}</span><div className="mut">{fmt(p.ts)}</div>{showN&&p.note&&<div className="pnote">💬 {p.note}</div>}</div>{p.photo?<img className="thumb" src={p.photo} onClick={()=>zoom?.(p.photo)}/>:p.loc?<a className="btn sm" target="_blank" href={`https://maps.google.com/?q=${p.loc.lat},${p.loc.lng}`}>📍</a>:null}<button className="sm" onClick={()=>{setDy(+dayAt(p.ts,0));setEf(null)}}>Review</button></div>)}
     {ev.length>6&&<button className="sm w" style={{marginTop:8}} onClick={()=>setMore(!more)}>{more?'Show less ▴':`Show all ${ev.length} ▾`}</button>}</>})()}</Item>}
-  <Item data-tour="fixcal"><h3>{sg?`${nm(tu)}'s hours`:'Fix your hours'}</h3><p className="mut" style={{marginBottom:6}}>🔒 Only times older than 24 hours can be fixed.</p><p className="mut">{sg?'Tap a day to review the punches and suggest a correction.':`Tap a day, then choose: edit a session, add time in + out, time in only, or time out only. ${nm(sp.ownerId)} ${auto?'approves requests from others':'approves or denies it'}.`}</p>
+  <Item data-tour="fixcal"><h3>{sg?`${nm(tu)}'s hours`:'Fix your hours'}</h3><p className="mut" style={{marginBottom:6}}>🔒 Any day before today can be fixed. Today opens at 12:00 AM tomorrow.</p><p className="mut">{sg?'Tap a day to review the punches and suggest a correction.':`Tap a day, then choose: edit a session, add time in + out, time in only, or time out only. ${nm(sp.ownerId)} ${auto?'approves requests from others':'approves or denies it'}.`}</p>
    <div className="cal">{['S','M','T','W','T','F','S'].map((w,i)=><div key={i} className="wd">{w}</div>)}{[...Array(lead)].map((_,i)=><div key={'e'+i}/>)}
-    {days.map((d,i)=><button key={d} disabled={d>now} className={`dc ${d===tdy?'today':''} ${pd(d)?'pend':''} ${d>lim?'lk':''}`} onClick={()=>{buzz();if(d>lim&&!sg)return say('🔒 Fixes only cover times older than 24 hours, so they never change your current time.',5000);setDy(d);setEf(null)}}><div className="lvl" style={{height:dd[i]/mx*100+'%'}}/><b>{new Date(d).getDate()}</b><i>{dd[i]>0?(dd[i]<10?dd[i].toFixed(1):Math.round(dd[i]))+'h':''}</i></button>)}</div>
+    {days.map((d,i)=><button key={d} disabled={d>now} className={`dc ${d===tdy?'today':''} ${pd(d)?'pend':''} ${d>=lim?'lk':''}`} onClick={()=>{buzz();if(d>=lim&&!sg)return say('🔒 Today cannot be fixed yet. It opens at 12:00 AM tomorrow.',5000);setDy(d);setEf(null)}}><div className="lvl" style={{height:dd[i]/mx*100+'%'}}/><b>{new Date(d).getDate()}</b><i>{dd[i]>0?(dd[i]<10?dd[i].toFixed(1):Math.round(dd[i]))+'h':''}</i></button>)}</div>
    <div className="row sp mut" style={{marginTop:10}}><span>Fill = hours that day</span><span>🟡 = pending request</span></div></Item>
 
   <h3 data-tour="fixreq" style={{margin:'16px 0 10px'}}>Requests</h3>

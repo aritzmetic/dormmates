@@ -5,6 +5,7 @@ import {enablePush} from './push';
 import {auth,db} from './firebase';
 import {ping,pingWait} from './notify';
 import {List,Item,Av,buzz} from './ui';
+import AutoOff from './AutoOff';
 import {cyc,cycLabel,fmt,sessions,notify,FIX,defDue,cycEndOf,sameSet} from './lib';
 
 const DFLT={inOn:false,inAt:'08:00',outOn:false,outAt:'17:00',days:[0,1,2,3,4,5,6],longOn:false,longH:10};
@@ -22,7 +23,7 @@ function Acc({id,open,set,icon,title,sub,children}){const on=open===id;
 // Everything configurable lives here, grouped by who it is for:
 //  Account, Alerts (me) · Space, Fix rules, Bill defaults, Host tools (space) · Data
 // Space-level sections are visible to everyone but only the host can change them.
-export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,showUpdates,replayTour,openBuys}){
+export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,setOff,askNotif,switchAcc,delAcc,leave,delSpace,openSpaces,thm,setThm,hideN,setHideN,showUpdates,replayTour,openBuys,AO}){
  const cfg=sp.cfg||{},sref=doc(db,'spaces',sp.id),[open,setOpen]=useState('space'),[rp,setRp]=useState({...DFLT,...(PF||{})}),[an,setAn]=useState(''),[hb,setHb]=useState(undefined),[busy,setBusy]=useState(false);
  useEffect(()=>onSnapshot(doc(db,'meta','tick'),d=>setHb(d.exists()?d.data().at:null),()=>setHb(undefined)),[]);
  const dirty=useRef(null),[saved,setSaved]=useState(false);
@@ -153,7 +154,7 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
 
   <Item className="acc-wrap" data-tour="set-fixes">
    <Acc id="fixes" open={open} set={setOpen} icon="📝" title="Fix request rules" sub={`${cfg.hostAuto!==false?'Host fixes auto-approved · ':''}${back} · max ${cfg.fixMaxDays||31} days per request`}>
-    <p className="mut" style={{marginBottom:10}}>🔒 Always on: a fix can only cover times older than 24 hours, so it can never change someone's current time.</p>
+    <p className="mut" style={{marginBottom:10}}>🔒 Always on: a fix can cover any day before today. Today opens at 12:00 AM tomorrow, so a fix can never change someone's current day.</p>
     {hostOnly}
     <fieldset disabled={!owner}><form key={JSON.stringify(cfg)} onSubmit={saveFix}>
      <label className="chk"><input type="checkbox" name="ha" defaultChecked={cfg.hostAuto!==false}/>Host's own fixes are approved instantly</label>
@@ -221,6 +222,11 @@ export default function Settings({u,sp,spaces,owner,members,nm,PF,P,X,r,cd,say,s
      <details style={{marginBottom:8}}><summary><b>iPhone setup (Shortcuts app)</b></summary><p className="mut" style={{marginTop:8}}>1. Open Shortcuts → Automation → + → <b>Wi-Fi</b> → choose the dorm network{wifi.length?` (${wifi.join(' or ')})`:''} and tick <b>Connects</b>.<br/>2. Add the action <b>Get Contents of URL</b> and paste the “Connected” link.<br/>3. Choose <b>Run Immediately</b> (not “Ask Before Running”) and save.<br/>4. Make a second automation with <b>Disconnects</b> and the “Disconnected” link.</p></details>
      <details><summary><b>Android setup (MacroDroid, free)</b></summary><p className="mut" style={{marginTop:8}}>1. Install MacroDroid → Add Macro.<br/>2. Trigger: <b>Wi-Fi Connected</b> and pick the dorm network{wifi.length?` (${wifi.join(' or ')})`:''}. Action: <b>HTTP Request</b> → GET → paste the “Connected” link.<br/>3. Make a second macro with <b>Wi-Fi Disconnected</b> and the “Disconnected” link.<br/>4. Set MacroDroid's battery to “Unrestricted” so it can run in the background.</p></details></>
      :<button className="pri w" onClick={mkKey}>Create my personal links</button>}
+   </Acc></Item>
+
+  <Item className="acc-wrap">
+   <Acc id="autooff" open={open} set={setOpen} icon="🌙" title="8 PM auto time-in" sub={`${AO.filter(x=>x.status==='pending').length&&owner?AO.filter(x=>x.status==='pending').length+' request(s) waiting · ':''}Ask the host to turn it off for days you'll be away`}>
+    <AutoOff u={u} sp={sp} owner={owner} members={members} nm={nm} AO={AO} say={say}/>
    </Acc></Item>
 
   <Item className="acc-wrap">

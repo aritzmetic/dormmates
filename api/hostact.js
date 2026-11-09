@@ -1,5 +1,5 @@
-import {auth,db,push,who,others} from './_lib.js';
-import {norm} from '../src/lib.js';
+import {auth,db,push,who,others,offDocs} from './_lib.js';
+import {norm,withOff} from '../src/lib.js';
 
 // Host actions on a member who disconnected from the dorm Wi-Fi but is still timed in.
 // POST {sid, action:'timeout'|'remind'|'dismiss', target, when?:'wifi'|'now', text?}  with  Authorization: Bearer <Firebase ID token>
@@ -28,7 +28,7 @@ export default async function handler(req,res){
 
     if(action==='timeout'){
       const rows=(await sd.ref.collection('punches').orderBy('ts','desc').limit(300).get()).docs.map(d=>d.data());
-      const last=norm(target,rows,Date.now()).at(-1);
+      const last=norm(target,withOff(rows,await offDocs(sd.ref)),Date.now()).at(-1);
       if(last?.type!=='in'){await pres.set({pending:false,resolved:'already-out',resolvedAt:Date.now()},{merge:true});await wl.delete();return res.json({ok:true,already:true})}
       // time them out at the recorded Wi-Fi disconnect time (never before their time in), or right now
       const ts=when==='wifi'&&pd.outAt&&pd.outAt>last.ts?pd.outAt:Date.now();
